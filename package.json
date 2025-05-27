@@ -1,0 +1,19 @@
+{
+  "name": "winner-m",
+  "version": "0.0.1",
+  "description": "A WinRM library for NodeJS",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "Tim Kremer",
+  "license": "ISC",
+  "dependencies": {
+    "axios": "^1.9.0",
+    "axios-ntlm": "^1.4.4",
+    "https-proxy-agent": "^7.0.6",
+    "uuid": "^11.1.0",
+    "xml2js": "^0.6.2"
+  }
+}
