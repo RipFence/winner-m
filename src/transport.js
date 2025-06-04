@@ -1,4 +1,5 @@
 import axios from 'axios';
+import https from 'node:https';
 import { HttpsProxyAgent } from 'https-proxy-agent';
 import { NtlmClient } from 'axios-ntlm';
 import fs from 'fs';
@@ -182,12 +183,12 @@ export class Transport {
 
         // Handle SSL/TLS configuration
         if (this.server_cert_validation === 'validate') {
-            config.httpsAgent = new HttpsProxyAgent({
+            config.httpsAgent = new https.Agent({
                 rejectUnauthorized: true,
                 ca: this.ca_trust_path !== 'legacy_requests' ? fs.readFileSync(this.ca_trust_path) : undefined
             });
         } else {
-            config.httpsAgent = new HttpsProxyAgent({
+            config.httpsAgent = new https.Agent({
                 rejectUnauthorized: false
             });
         }

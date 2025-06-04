@@ -1,21 +1,22 @@
 // Contains client side logic of WinRM SOAP protocol implementation
 import { v4 as uuidv4 } from 'uuid';
-import { parseStringPromise, Builder } from 'xml2js';
+import { create } from 'xmlbuilder2';
 import {
   WinRMError,
   WinRMOperationTimeoutError,
   WinRMTransportError,
   WSManFaultError,
 } from './exceptions.js';
-
-// Will be imported from transport.js once implemented
 import { Transport } from './transport.js';
 
+// XML Namespace definitions
 export const xmlns = {
-  soapenv: 'http://www.w3.org/2003/05/soap-envelope',
-  soapaddr: 'http://schemas.xmlsoap.org/ws/2004/08/addressing',
-  wsmanfault: 'http://schemas.microsoft.com/wbem/wsman/1/wsmanfault',
-  wmierror: 'http://schemas.dmtf.org/wbem/wscim/1/cim-schema/2/MSFT_WmiError',
+  s: 'http://www.w3.org/2003/05/soap-envelope',
+  a: 'http://schemas.xmlsoap.org/ws/2004/08/addressing',
+  w: 'http://schemas.dmtf.org/wbem/wsman/1/wsman.xsd',
+  p: 'http://schemas.microsoft.com/wbem/wsman/1/wsman.xsd',
+  rsp: 'http://schemas.microsoft.com/wbem/wsman/1/windows/shell',
+  x: 'http://schemas.xmlsoap.org/ws/2004/09/transfer'
 };
 
 export class Protocol {
@@ -110,43 +111,36 @@ export class Protocol {
   buildWsmanHeader({ action, resource_uri, shell_id = null, message_id = null }) {
     message_id = message_id || uuidv4();
 
-    const header = {
-      '@xmlns:xsd': 'http://www.w3.org/2001/XMLSchema',
-      '@xmlns:xsi': 'http://www.w3.org/2001/XMLSchema-instance',
-      '@xmlns:env': xmlns.soapenv,
-      '@xmlns:a': xmlns.soapaddr,
-      '@xmlns:b': 'http://schemas.dmtf.org/wbem/wsman/1/cimbinding.xsd',
-      '@xmlns:n': 'http://schemas.xmlsoap.org/ws/2004/09/enumeration',
-      '@xmlns:x': 'http://schemas.xmlsoap.org/ws/2004/09/transfer',
-      '@xmlns:w': 'http://schemas.dmtf.org/wbem/wsman/1/wsman.xsd',
-      '@xmlns:p': 'http://schemas.microsoft.com/wbem/wsman/1/wsman.xsd',
-      '@xmlns:rsp': 'http://schemas.microsoft.com/wbem/wsman/1/windows/shell',
-      '@xmlns:cfg': 'http://schemas.microsoft.com/wbem/wsman/1/config',
-      'env:Header': {
-        'a:To': 'http://windows-host:5985/wsman',
-        'a:ReplyTo': {
-          'a:Address': {
-            '@mustUnderstand': 'true',
-            '#text': 'http://schemas.xmlsoap.org/ws/2004/08/addressing/role/anonymous',
-          },
-        },
-        'w:MaxEnvelopeSize': { '@mustUnderstand': 'true', '#text': '153600' },
-        'a:MessageID': `uuid:${message_id}`,
-        'w:Locale': { '@mustUnderstand': 'false', '@xml:lang': 'en-US' },
-        'p:DataLocale': { '@mustUnderstand': 'false', '@xml:lang': 'en-US' },
-        'w:OperationTimeout': `PT${parseInt(this.operation_timeout_sec)}S`,
-        'w:ResourceURI': { '@mustUnderstand': 'true', '#text': resource_uri },
-        'a:Action': { '@mustUnderstand': 'true', '#text': action },
-      },
-    };
+    const doc = create({ version: '1.0', encoding: 'UTF-8' })
+      .ele('s:Envelope', { 
+        's': xmlns.s,
+        'a': xmlns.a,
+        'w': xmlns.w,
+        'p': xmlns.p,
+        'rsp': xmlns.rsp,
+        'x': xmlns.x
+      });
+
+    const header = doc.ele('s:Header');
+    header.ele('a:To').txt('http://windows-host:5985/wsman');
+    header.ele('a:ReplyTo')
+      .ele('a:Address', { mustUnderstand: 'true' })
+      .txt('http://schemas.xmlsoap.org/ws/2004/08/addressing/role/anonymous');
+    header.ele('w:MaxEnvelopeSize', { mustUnderstand: 'true' }).txt('153600');
+    header.ele('a:MessageID').txt(`uuid:${message_id}`);
+    header.ele('w:Locale', { mustUnderstand: 'false', 'xml:lang': 'en-US' });
+    header.ele('p:DataLocale', { mustUnderstand: 'false', 'xml:lang': 'en-US' });
+    header.ele('w:OperationTimeout').txt(`PT${parseInt(this.operation_timeout_sec)}S`);
+    header.ele('w:ResourceURI', { mustUnderstand: 'true' }).txt(resource_uri);
+    header.ele('a:Action', { mustUnderstand: 'true' }).txt(action);
 
     if (shell_id) {
-      header['env:Header']['w:SelectorSet'] = {
-        'w:Selector': { '@Name': 'ShellId', '#text': shell_id },
-      };
+      header.ele('w:SelectorSet')
+        .ele('w:Selector', { Name: 'ShellId' })
+        .txt(shell_id);
     }
 
-    return header;
+    return doc;
   }
 
   /**
@@ -172,51 +166,41 @@ export class Protocol {
     lifetime = null,
     idle_timeout = null,
   } = {}) {
-    const req = {
-      'env:Envelope': this.buildWsmanHeader({
-        resource_uri: 'http://schemas.microsoft.com/wbem/wsman/1/windows/shell/cmd',
-        action: 'http://schemas.xmlsoap.org/ws/2004/09/transfer/Create',
-      }),
-    };
+    const doc = this.buildWsmanHeader({
+      resource_uri: 'http://schemas.microsoft.com/wbem/wsman/1/windows/shell/cmd',
+      action: 'http://schemas.xmlsoap.org/ws/2004/09/transfer/Create',
+    });
 
-    const header = req['env:Envelope']['env:Header'];
-    header['w:OptionSet'] = {
-      'w:Option': [
-        { '@Name': 'WINRS_NOPROFILE', '#text': String(noprofile).toUpperCase() },
-        { '@Name': 'WINRS_CODEPAGE', '#text': String(codepage) },
-      ],
-    };
+    const optionSet = doc.root().ele('s:Body')
+      .ele('w:OptionSet')
+      .ele('w:Option', { Name: 'WINRS_NOPROFILE' }).txt(String(noprofile).toUpperCase()).up()
+      .ele('w:Option', { Name: 'WINRS_CODEPAGE' }).txt(String(codepage));
 
-    const shell = req['env:Envelope']['env:Body'] = {
-      'rsp:Shell': {
-        'rsp:InputStreams': i_stream,
-        'rsp:OutputStreams': o_stream,
-      },
-    };
+    const shell = doc.root().ele('rsp:Shell');
+    shell.ele('rsp:InputStreams').txt(i_stream);
+    shell.ele('rsp:OutputStreams').txt(o_stream);
 
     if (working_directory) {
-      shell['rsp:Shell']['rsp:WorkingDirectory'] = working_directory;
+      shell.ele('rsp:WorkingDirectory').txt(working_directory);
     }
 
     if (idle_timeout) {
-      shell['rsp:Shell']['rsp:IdleTimeout'] = `PT${idle_timeout}S`;
+      shell.ele('rsp:IdleTimeout').txt(`PT${idle_timeout}S`);
     }
 
     if (env_vars) {
-      shell['rsp:Shell']['rsp:Environment'] = {
-        'rsp:Variable': Object.entries(env_vars).map(([name, value]) => ({
-          '@Name': name,
-          '#text': value,
-        })),
-      };
+      const env = shell.ele('rsp:Environment');
+      for (const [name, value] of Object.entries(env_vars)) {
+        env.ele('rsp:Variable', { Name: name }).txt(value);
+      }
     }
 
-    const builder = new Builder();
-    const res = await this.transport.sendMessage(builder.buildObject(req));
-    const result = await parseStringPromise(res);
-    
-    return result['s:Envelope']['s:Body'][0]['x:ResourceCreated'][0]
-      ['a:ReferenceParameters'][0]['w:SelectorSet'][0]['w:Selector'][0]['_'];
+    const xmlStr = doc.end({ prettyPrint: false });
+    const res = await this.transport.sendMessage(xmlStr);
+    const result = create(res).toObject();
+
+    return result['s:Envelope']['s:Body']['x:ResourceCreated']
+      ['a:ReferenceParameters']['w:SelectorSet']['w:Selector']['_'];
   }
 
   /**
@@ -235,45 +219,33 @@ export class Protocol {
     console_mode_stdin = true,
     skip_cmd_shell = false
   ) {
-    const req = {
-      'env:Envelope': this.buildWsmanHeader({
-        resource_uri: 'http://schemas.microsoft.com/wbem/wsman/1/windows/shell/cmd',
-        action: 'http://schemas.microsoft.com/wbem/wsman/1/windows/shell/Command',
-        shell_id,
-      }),
-    };
+    const doc = this.buildWsmanHeader({
+      resource_uri: 'http://schemas.microsoft.com/wbem/wsman/1/windows/shell/cmd',
+      action: 'http://schemas.microsoft.com/wbem/wsman/1/windows/shell/Command',
+      shell_id,
+    });
 
-    const header = req['env:Envelope']['env:Header'];
-    header['w:OptionSet'] = {
-      'w:Option': [
-        {
-          '@Name': 'WINRS_CONSOLEMODE_STDIN',
-          '#text': String(console_mode_stdin).toUpperCase(),
-        },
-        {
-          '@Name': 'WINRS_SKIP_CMD_SHELL',
-          '#text': String(skip_cmd_shell).toUpperCase(),
-        },
-      ],
-    };
+    const optionSet = doc.root().ele('s:Body')
+      .ele('w:OptionSet')
+      .ele('w:Option', { Name: 'WINRS_CONSOLEMODE_STDIN' }).txt(String(console_mode_stdin).toUpperCase()).up()
+      .ele('w:Option', { Name: 'WINRS_SKIP_CMD_SHELL' }).txt(String(skip_cmd_shell).toUpperCase());
 
-    const cmd_line = req['env:Envelope']['env:Body'] = {
-      'rsp:CommandLine': {
-        'rsp:Command': { '#text': command },
-      },
-    };
+    const cmdLine = doc.root().ele('s:Body')
+      .ele('rsp:CommandLine')
+      .ele('rsp:Command').txt(command);
 
     if (arguments_.length > 0) {
-      cmd_line['rsp:CommandLine']['rsp:Arguments'] = arguments_.map(arg => ({
-        '#text': arg,
-      }));
+      const argsElem = cmdLine.up().ele('rsp:Arguments');
+      for (const arg of arguments_) {
+        argsElem.txt(arg);
+      }
     }
 
-    const builder = new Builder();
-    const res = await this.transport.sendMessage(builder.buildObject(req));
-    const result = await parseStringPromise(res);
+    const xmlStr = doc.end({ prettyPrint: false });
+    const res = await this.transport.sendMessage(xmlStr);
+    const result = create(res).toObject();
     
-    return result['s:Envelope']['s:Body'][0]['rsp:CommandResponse'][0]['rsp:CommandId'][0];
+    return result['s:Envelope']['s:Body']['rsp:CommandResponse']['rsp:CommandId'];
   }
 
   /**
@@ -284,29 +256,24 @@ export class Protocol {
    */
   async cleanupCommand(shell_id, command_id) {
     const message_id = uuidv4();
-    const req = {
-      'env:Envelope': this.buildWsmanHeader({
-        resource_uri: 'http://schemas.microsoft.com/wbem/wsman/1/windows/shell/cmd',
-        action: 'http://schemas.microsoft.com/wbem/wsman/1/windows/shell/Signal',
-        shell_id,
-        message_id,
-      }),
-    };
+    const doc = this.buildWsmanHeader({
+      resource_uri: 'http://schemas.microsoft.com/wbem/wsman/1/windows/shell/cmd',
+      action: 'http://schemas.microsoft.com/wbem/wsman/1/windows/shell/Signal',
+      shell_id,
+      message_id,
+    });
 
-    const signal = req['env:Envelope']['env:Body'] = {
-      'rsp:Signal': {
-        '@CommandId': command_id,
-        'rsp:Code':
-          'http://schemas.microsoft.com/wbem/wsman/1/windows/shell/signal/terminate',
-      },
-    };
+    doc.root().ele('s:Body')
+      .ele('rsp:Signal', { CommandId: command_id })
+      .ele('rsp:Code')
+      .txt('http://schemas.microsoft.com/wbem/wsman/1/windows/shell/signal/terminate');
 
-    const builder = new Builder();
-    const res = await this.transport.sendMessage(builder.buildObject(req));
-    const result = await parseStringPromise(res);
+    const xmlStr = doc.end({ prettyPrint: false });
+    const res = await this.transport.sendMessage(xmlStr);
+    const result = create(res).toObject();
     
-    const relates_to = result['s:Envelope']['s:Header'][0]['a:RelatesTo'][0];
-    if (relates_to.replace('uuid:', '') !== message_id) {
+    const relates_to = result['s:Envelope']['s:Header']['a:RelatesTo'].replace('uuid:', '');
+    if (relates_to !== message_id) {
       throw new WinRMError('Invalid response message ID');
     }
   }
@@ -319,22 +286,20 @@ export class Protocol {
    */
   async closeShell(shell_id, close_session = true) {
     const message_id = uuidv4();
-    const req = {
-      'env:Envelope': this.buildWsmanHeader({
-        resource_uri: 'http://schemas.microsoft.com/wbem/wsman/1/windows/shell/cmd',
-        action: 'http://schemas.xmlsoap.org/ws/2004/09/transfer/Delete',
-        shell_id,
-        message_id,
-      }),
-    };
+    const doc = this.buildWsmanHeader({
+      resource_uri: 'http://schemas.microsoft.com/wbem/wsman/1/windows/shell/cmd',
+      action: 'http://schemas.xmlsoap.org/ws/2004/09/transfer/Delete',
+      shell_id,
+      message_id,
+    });
 
     try {
-      const builder = new Builder();
-      const res = await this.transport.sendMessage(builder.buildObject(req));
-      const result = await parseStringPromise(res);
+      const xmlStr = doc.end({ prettyPrint: false });
+      const res = await this.transport.sendMessage(xmlStr);
+      const result = create(res).toObject();
       
-      const relates_to = result['s:Envelope']['s:Header'][0]['a:RelatesTo'][0];
-      if (relates_to.replace('uuid:', '') !== message_id) {
+      const relates_to = result['s:Envelope']['s:Header']['a:RelatesTo'].replace('uuid:', '');
+      if (relates_to !== message_id) {
         throw new WinRMError('Invalid response message ID');
       }
     } finally {
@@ -352,26 +317,20 @@ export class Protocol {
    * @throws {WinRMOperationTimeoutError} When there is no output from the command
    */
   async getCommandOutputRaw(shell_id, command_id) {
-    const req = {
-      'env:Envelope': this.buildWsmanHeader({
-        resource_uri: 'http://schemas.microsoft.com/wbem/wsman/1/windows/shell/cmd',
-        action: 'http://schemas.microsoft.com/wbem/wsman/1/windows/shell/Receive',
-        shell_id,
-      }),
-    };
+    const doc = this.buildWsmanHeader({
+      resource_uri: 'http://schemas.microsoft.com/wbem/wsman/1/windows/shell/cmd',
+      action: 'http://schemas.microsoft.com/wbem/wsman/1/windows/shell/Receive',
+      shell_id,
+    });
 
-    req['env:Envelope']['env:Body'] = {
-      'rsp:Receive': {
-        'rsp:DesiredStream': {
-          '@CommandId': command_id,
-          '#text': 'stdout stderr',
-        },
-      },
-    };
+    doc.root().ele('s:Body')
+      .ele('rsp:Receive')
+      .ele('rsp:DesiredStream', { CommandId: command_id })
+      .txt('stdout stderr');
 
-    const builder = new Builder();
-    const res = await this.transport.sendMessage(builder.buildObject(req));
-    const result = await parseStringPromise(res);
+    const xmlStr = doc.end({ prettyPrint: false });
+    const res = await this.transport.sendMessage(xmlStr);
+    const result = create(res).toObject();
 
     const stdout = [];
     const stderr = [];
@@ -379,26 +338,29 @@ export class Protocol {
     let command_done = false;
 
     // Get Response node
-    const receiveResponse = result['s:Envelope']['s:Body'][0]['rsp:ReceiveResponse'][0];
+    const receiveResponse = result['s:Envelope']['s:Body']['rsp:ReceiveResponse'];
 
     // Process stream output
     if (receiveResponse['rsp:Stream']) {
-      for (const stream of receiveResponse['rsp:Stream']) {
-        const streamAttrs = stream.$;
-        if (streamAttrs.Name === 'stdout' && stream._) {
-          stdout.push(Buffer.from(stream._, 'base64'));
-        } else if (streamAttrs.Name === 'stderr' && stream._) {
-          stderr.push(Buffer.from(stream._, 'base64'));
+      const streams = Array.isArray(receiveResponse['rsp:Stream']) 
+        ? receiveResponse['rsp:Stream'] 
+        : [receiveResponse['rsp:Stream']];
+
+      for (const stream of streams) {
+        if (stream['@Name'] === 'stdout' && stream['_']) {
+          stdout.push(Buffer.from(stream['_'], 'base64'));
+        } else if (stream['@Name'] === 'stderr' && stream['_']) {
+          stderr.push(Buffer.from(stream['_'], 'base64'));
         }
       }
     }
 
     // Check if command is done and get exit code
     if (receiveResponse['rsp:CommandState']) {
-      const state = receiveResponse['rsp:CommandState'][0].$.State;
+      const state = receiveResponse['rsp:CommandState']['@State'];
       command_done = state.endsWith('CommandState/Done');
-      if (command_done && receiveResponse['rsp:CommandState'][0]['rsp:ExitCode']) {
-        return_code = parseInt(receiveResponse['rsp:CommandState'][0]['rsp:ExitCode'][0], 10);
+      if (command_done && receiveResponse['rsp:CommandState']['rsp:ExitCode']) {
+        return_code = parseInt(receiveResponse['rsp:CommandState']['rsp:ExitCode'], 10);
       }
     }
 
