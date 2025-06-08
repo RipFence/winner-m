@@ -1,7 +1,6 @@
 import axios from 'axios';
 import https from 'node:https';
 import { HttpsProxyAgent } from 'https-proxy-agent';
-import { NtlmClient } from 'axios-ntlm';
 import fs from 'fs';
 import { WinRMError, InvalidCredentialsError, WinRMTransportError } from './exceptions.js';
 import { Encryption } from './encryption.js';
@@ -109,8 +108,8 @@ export class Transport {
         }
 
         // Convert kerberos_delegation to boolean
-        this.kerberos_delegation = typeof kerberos_delegation === 'boolean' 
-            ? kerberos_delegation 
+        this.kerberos_delegation = typeof kerberos_delegation === 'boolean'
+            ? kerberos_delegation
             : strToBool(String(kerberos_delegation));
 
         this.auth_method = auth_method;
@@ -121,7 +120,7 @@ export class Transport {
 
         // Validate credential requirements
         if (this.auth_method !== 'kerberos') {
-            if (this.auth_method === 'certificate' || 
+            if (this.auth_method === 'certificate' ||
                 (this.auth_method === 'ssl' && (this.cert_pem || this.cert_key_pem))) {
                 if (!this.cert_pem || !this.cert_key_pem) {
                     throw new InvalidCredentialsError('both cert_pem and cert_key_pem must be specified for cert auth');
@@ -326,14 +325,14 @@ export class Transport {
         try {
             const headers = { ...this.default_headers, ...extraHeaders };
             const response = await this.client.post('', data, { headers });
-            
+
             if (response.status >= 400) {
                 if (response.status === 401) {
                     throw new InvalidCredentialsError('the specified credentials were rejected by the server');
                 }
                 throw new WinRMTransportError('http', response.status, response.data?.toString() || '');
             }
-            
+
             return response;
         } catch (error) {
             if (error.response) {
