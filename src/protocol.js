@@ -1,447 +1,402 @@
-// Contains client side logic of WinRM SOAP protocol implementation
-import { v4 as uuidv4 } from 'uuid';
-import { parseStringPromise, Builder } from 'xml2js';
-import {
-  WinRMError,
-  WinRMOperationTimeoutError,
-  WinRMTransportError,
-  WSManFaultError,
-} from './exceptions.js';
+const { WinRMProtocolError, WinRMConnectionError, WinRMAuthenticationError, WinRMTimeoutError } = require('./utils/ErrorTypes');
+const { logger } = require('./utils/Logging');
+const HttpClient = require('./transport/HttpClient');
+const AuthManager = require('./auth/AuthManager');
+const XMLUtils = require('./utils/XMLUtils');
 
-// Will be imported from transport.js once implemented
-import { Transport } from './transport.js';
-
-export const xmlns = {
-  soapenv: 'http://www.w3.org/2003/05/soap-envelope',
-  soapaddr: 'http://schemas.xmlsoap.org/ws/2004/08/addressing',
-  wsmanfault: 'http://schemas.microsoft.com/wbem/wsman/1/wsmanfault',
-  wmierror: 'http://schemas.dmtf.org/wbem/wscim/1/cim-schema/2/MSFT_WmiError',
-};
-
-export class Protocol {
-  static DEFAULT_READ_TIMEOUT_SEC = 30;
-  static DEFAULT_OPERATION_TIMEOUT_SEC = 20;
-  static DEFAULT_MAX_ENV_SIZE = 153600;
-  static DEFAULT_LOCALE = 'en-US';
-
-  /**
-   * @param {Object} config The configuration object
-   * @param {string} config.endpoint The WinRM webservice endpoint
-   * @param {string} [config.transport='plaintext'] Transport type: 'plaintext', 'kerberos', 'ssl', 'ntlm', 'credssp'
-   * @param {string} [config.username] Username for authentication
-   * @param {string} [config.password] Password for authentication
-   * @param {string} [config.realm] Realm for authentication
-   * @param {string} [config.service='HTTP'] Service name
-   * @param {string} [config.keytab] Path to keytab file
-   * @param {string} [config.ca_trust_path='legacy_requests'] CA trust path
-   * @param {string} [config.cert_pem] Path to certificate file in PEM format
-   * @param {string} [config.cert_key_pem] Path to certificate key file in PEM format
-   * @param {string} [config.server_cert_validation='validate'] Server certificate validation mode
-   * @param {boolean} [config.kerberos_delegation=false] Enable Kerberos delegation
-   * @param {number} [config.read_timeout_sec=30] Read timeout in seconds
-   * @param {number} [config.operation_timeout_sec=20] Operation timeout in seconds
-   * @param {string} [config.kerberos_hostname_override] Kerberos hostname override
-   * @param {string} [config.message_encryption='auto'] Message encryption mode
-   * @param {boolean} [config.credssp_disable_tlsv1_2=false] Disable TLS 1.2 for CredSSP
-   * @param {boolean} [config.send_cbt=true] Send channel binding token
-   * @param {string} [config.proxy='legacy_requests'] Proxy configuration
-   */
-  constructor({
-    endpoint,
-    transport = 'plaintext',
-    username = null,
-    password = null,
-    realm = null,
-    service = 'HTTP',
-    keytab = null,
-    ca_trust_path = 'legacy_requests',
-    cert_pem = null,
-    cert_key_pem = null,
-    server_cert_validation = 'validate',
-    kerberos_delegation = false,
-    read_timeout_sec = Protocol.DEFAULT_READ_TIMEOUT_SEC,
-    operation_timeout_sec = Protocol.DEFAULT_OPERATION_TIMEOUT_SEC,
-    kerberos_hostname_override = null,
-    message_encryption = 'auto',
-    credssp_disable_tlsv1_2 = false,
-    send_cbt = true,
-    proxy = 'legacy_requests',
-  }) {
-    if (operation_timeout_sec >= read_timeout_sec || operation_timeout_sec < 1) {
-      throw new WinRMError('Invalid operation_timeout_sec value');
-    }
-
-    this.read_timeout_sec = read_timeout_sec;
-    this.operation_timeout_sec = operation_timeout_sec;
-    this.max_env_sz = Protocol.DEFAULT_MAX_ENV_SIZE;
-    this.locale = Protocol.DEFAULT_LOCALE;
-
-    this.transport = new Transport({
-      endpoint,
-      username,
-      password,
-      realm,
-      service,
-      keytab,
-      ca_trust_path,
-      cert_pem,
-      cert_key_pem,
-      read_timeout_sec: this.read_timeout_sec,
-      server_cert_validation,
-      kerberos_delegation,
-      kerberos_hostname_override,
-      auth_method: transport,
-      message_encryption,
-      credssp_disable_tlsv1_2,
-      send_cbt,
-      proxy,
+/**
+ * Low-level WinRM Protocol class
+ * Provides direct access to WinRM operations (shell lifecycle, command execution)
+ * Similar to pywinrm's Protocol class
+ */
+class Protocol {
+  constructor(options) {
+    this.options = this.validateOptions(options);
+    this.httpClient = new HttpClient(this.options);
+    this.authManager = new AuthManager(this.options);
+    this.shellId = null;
+    this.isConnected = false;
+    this.authenticated = false;
+    
+    logger.info('WinRM Protocol initialized', {
+      host: this.options.host,
+      port: this.options.port,
+      protocol: this.options.protocol,
+      auth: this.authManager.getAuthInfo()
     });
   }
 
   /**
-   * Build the WSMan header needed for operations
-   * @param {Object} params Header parameters
-   * @param {string} params.action The WSMan action to perform
-   * @param {string} params.resource_uri The WSMan resource URI
-   * @param {string} [params.shell_id] Optional shell UUID
-   * @param {string} [params.message_id] Optional message UUID
-   * @returns {Object} The WSMan header as an object
+   * Validate and normalize options
    */
-  buildWsmanHeader({ action, resource_uri, shell_id = null, message_id = null }) {
-    message_id = message_id || uuidv4();
-
-    const header = {
-      '@xmlns:xsd': 'http://www.w3.org/2001/XMLSchema',
-      '@xmlns:xsi': 'http://www.w3.org/2001/XMLSchema-instance',
-      '@xmlns:env': xmlns.soapenv,
-      '@xmlns:a': xmlns.soapaddr,
-      '@xmlns:b': 'http://schemas.dmtf.org/wbem/wsman/1/cimbinding.xsd',
-      '@xmlns:n': 'http://schemas.xmlsoap.org/ws/2004/09/enumeration',
-      '@xmlns:x': 'http://schemas.xmlsoap.org/ws/2004/09/transfer',
-      '@xmlns:w': 'http://schemas.dmtf.org/wbem/wsman/1/wsman.xsd',
-      '@xmlns:p': 'http://schemas.microsoft.com/wbem/wsman/1/wsman.xsd',
-      '@xmlns:rsp': 'http://schemas.microsoft.com/wbem/wsman/1/windows/shell',
-      '@xmlns:cfg': 'http://schemas.microsoft.com/wbem/wsman/1/config',
-      'env:Header': {
-        'a:To': 'http://windows-host:5985/wsman',
-        'a:ReplyTo': {
-          'a:Address': {
-            '@mustUnderstand': 'true',
-            '#text': 'http://schemas.xmlsoap.org/ws/2004/08/addressing/role/anonymous',
-          },
-        },
-        'w:MaxEnvelopeSize': { '@mustUnderstand': 'true', '#text': '153600' },
-        'a:MessageID': `uuid:${message_id}`,
-        'w:Locale': { '@mustUnderstand': 'false', '@xml:lang': 'en-US' },
-        'p:DataLocale': { '@mustUnderstand': 'false', '@xml:lang': 'en-US' },
-        'w:OperationTimeout': `PT${parseInt(this.operation_timeout_sec)}S`,
-        'w:ResourceURI': { '@mustUnderstand': 'true', '#text': resource_uri },
-        'a:Action': { '@mustUnderstand': 'true', '#text': action },
-      },
-    };
-
-    if (shell_id) {
-      header['env:Header']['w:SelectorSet'] = {
-        'w:Selector': { '@Name': 'ShellId', '#text': shell_id },
-      };
+  validateOptions(options) {
+    const requiredFields = ['host', 'auth'];
+    for (const field of requiredFields) {
+      if (!options[field]) {
+        throw new WinRMProtocolError(`Required option missing: ${field}`, 'OPTIONS_VALIDATION', {
+          field
+        });
+      }
     }
 
-    return header;
+    return {
+      host: options.host,
+      port: options.port || (options.protocol === 'https' ? 5986 : 5985),
+      protocol: options.protocol || 'https',
+      path: options.path || '/wsman',
+      auth: {
+        type: options.auth.type || 'ntlm',
+        username: options.auth.username,
+        password: options.auth.password,
+        domain: options.auth.domain || '',
+        workstation: options.auth.workstation || 'JS-WINRM-CLIENT'
+      },
+      ssl: options.ssl || { rejectUnauthorized: true },
+      timeouts: {
+        connectTimeout: options.timeouts?.connectTimeout || 30000,
+        readTimeout: options.timeouts?.readTimeout || 60000,
+        operationTimeout: options.timeouts?.operationTimeout || 60000
+      },
+      retries: {
+        maxRetries: options.retries?.maxRetries || 3,
+        retryDelay: options.retries?.retryDelay || 1000
+      },
+      maxConnections: options.maxConnections || 10
+    };
   }
 
   /**
-   * Open a shell on the destination host
-   * @param {Object} options Shell options
-   * @param {string} [options.i_stream='stdin'] Input stream
-   * @param {string} [options.o_stream='stdout stderr'] Output stream
-   * @param {string} [options.working_directory] Working directory
-   * @param {Object} [options.env_vars] Environment variables
-   * @param {boolean} [options.noprofile=false] No profile
-   * @param {number} [options.codepage=437] Code page
-   * @param {string} [options.lifetime] Shell lifetime
-   * @param {number|string} [options.idle_timeout] Idle timeout
-   * @returns {Promise<string>} Shell ID
+   * Open a WinRM shell
    */
-  async openShell({
-    i_stream = 'stdin',
-    o_stream = 'stdout stderr',
-    working_directory = null,
-    env_vars = null,
-    noprofile = false,
-    codepage = 437,
-    lifetime = null,
-    idle_timeout = null,
-  } = {}) {
-    const req = {
-      'env:Envelope': this.buildWsmanHeader({
-        resource_uri: 'http://schemas.microsoft.com/wbem/wsman/1/windows/shell/cmd',
-        action: 'http://schemas.xmlsoap.org/ws/2004/09/transfer/Create',
-      }),
-    };
-
-    const header = req['env:Envelope']['env:Header'];
-    header['w:OptionSet'] = {
-      'w:Option': [
-        { '@Name': 'WINRS_NOPROFILE', '#text': String(noprofile).toUpperCase() },
-        { '@Name': 'WINRS_CODEPAGE', '#text': String(codepage) },
-      ],
-    };
-
-    const shell = req['env:Envelope']['env:Body'] = {
-      'rsp:Shell': {
-        'rsp:InputStreams': i_stream,
-        'rsp:OutputStreams': o_stream,
-      },
-    };
-
-    if (working_directory) {
-      shell['rsp:Shell']['rsp:WorkingDirectory'] = working_directory;
+  async openShell() {
+    if (this.isConnected) {
+      logger.warn('Shell already open, ignoring openShell call');
+      return;
     }
 
-    if (idle_timeout) {
-      shell['rsp:Shell']['rsp:IdleTimeout'] = `PT${idle_timeout}S`;
-    }
-
-    if (env_vars) {
-      shell['rsp:Shell']['rsp:Environment'] = {
-        'rsp:Variable': Object.entries(env_vars).map(([name, value]) => ({
-          '@Name': name,
-          '#text': value,
-        })),
-      };
-    }
-
-    const builder = new Builder();
-    const res = await this.transport.sendMessage(builder.buildObject(req));
-    const result = await parseStringPromise(res);
-    
-    return result['s:Envelope']['s:Body'][0]['x:ResourceCreated'][0]
-      ['a:ReferenceParameters'][0]['w:SelectorSet'][0]['w:Selector'][0]['_'];
-  }
-
-  /**
-   * Run a command on a machine with an open shell
-   * @param {string} shell_id The shell id on the remote machine
-   * @param {string} command The command to run
-   * @param {string[]} [arguments=[]] Command arguments
-   * @param {boolean} [console_mode_stdin=true] Console mode stdin
-   * @param {boolean} [skip_cmd_shell=false] Skip CMD shell
-   * @returns {Promise<string>} Command ID
-   */
-  async runCommand(
-    shell_id,
-    command,
-    arguments_ = [],
-    console_mode_stdin = true,
-    skip_cmd_shell = false
-  ) {
-    const req = {
-      'env:Envelope': this.buildWsmanHeader({
-        resource_uri: 'http://schemas.microsoft.com/wbem/wsman/1/windows/shell/cmd',
-        action: 'http://schemas.microsoft.com/wbem/wsman/1/windows/shell/Command',
-        shell_id,
-      }),
-    };
-
-    const header = req['env:Envelope']['env:Header'];
-    header['w:OptionSet'] = {
-      'w:Option': [
-        {
-          '@Name': 'WINRS_CONSOLEMODE_STDIN',
-          '#text': String(console_mode_stdin).toUpperCase(),
-        },
-        {
-          '@Name': 'WINRS_SKIP_CMD_SHELL',
-          '#text': String(skip_cmd_shell).toUpperCase(),
-        },
-      ],
-    };
-
-    const cmd_line = req['env:Envelope']['env:Body'] = {
-      'rsp:CommandLine': {
-        'rsp:Command': { '#text': command },
-      },
-    };
-
-    if (arguments_.length > 0) {
-      cmd_line['rsp:CommandLine']['rsp:Arguments'] = arguments_.map(arg => ({
-        '#text': arg,
-      }));
-    }
-
-    const builder = new Builder();
-    const res = await this.transport.sendMessage(builder.buildObject(req));
-    const result = await parseStringPromise(res);
-    
-    return result['s:Envelope']['s:Body'][0]['rsp:CommandResponse'][0]['rsp:CommandId'][0];
-  }
-
-  /**
-   * Clean-up after a command
-   * @param {string} shell_id The shell id on the remote machine
-   * @param {string} command_id The command id to clean up
-   * @returns {Promise<void>}
-   */
-  async cleanupCommand(shell_id, command_id) {
-    const message_id = uuidv4();
-    const req = {
-      'env:Envelope': this.buildWsmanHeader({
-        resource_uri: 'http://schemas.microsoft.com/wbem/wsman/1/windows/shell/cmd',
-        action: 'http://schemas.microsoft.com/wbem/wsman/1/windows/shell/Signal',
-        shell_id,
-        message_id,
-      }),
-    };
-
-    const signal = req['env:Envelope']['env:Body'] = {
-      'rsp:Signal': {
-        '@CommandId': command_id,
-        'rsp:Code':
-          'http://schemas.microsoft.com/wbem/wsman/1/windows/shell/signal/terminate',
-      },
-    };
-
-    const builder = new Builder();
-    const res = await this.transport.sendMessage(builder.buildObject(req));
-    const result = await parseStringPromise(res);
-    
-    const relates_to = result['s:Envelope']['s:Header'][0]['a:RelatesTo'][0];
-    if (relates_to.replace('uuid:', '') !== message_id) {
-      throw new WinRMError('Invalid response message ID');
-    }
-  }
-
-  /**
-   * Close the shell
-   * @param {string} shell_id The shell id on the remote machine
-   * @param {boolean} [close_session=true] Whether to close the session
-   * @returns {Promise<void>}
-   */
-  async closeShell(shell_id, close_session = true) {
-    const message_id = uuidv4();
-    const req = {
-      'env:Envelope': this.buildWsmanHeader({
-        resource_uri: 'http://schemas.microsoft.com/wbem/wsman/1/windows/shell/cmd',
-        action: 'http://schemas.xmlsoap.org/ws/2004/09/transfer/Delete',
-        shell_id,
-        message_id,
-      }),
-    };
+    const startTime = Date.now();
+    logger.logShellEvent('Opening shell', null);
 
     try {
-      const builder = new Builder();
-      const res = await this.transport.sendMessage(builder.buildObject(req));
-      const result = await parseStringPromise(res);
+      // First, authenticate if not already done
+      if (!this.authenticated) {
+        await this.authenticate();
+      }
+
+      // Create the shell
+      const shellRequest = XMLUtils.buildCreateShell();
+      const response = await this.httpClient.request('POST', shellRequest);
       
-      const relates_to = result['s:Envelope']['s:Header'][0]['a:RelatesTo'][0];
-      if (relates_to.replace('uuid:', '') !== message_id) {
-        throw new WinRMError('Invalid response message ID');
-      }
-    } finally {
-      if (close_session) {
-        this.transport.closeSession();
-      }
-    }
-  }
+      // Parse response to get shell ID
+      const shellId = await XMLUtils.parseCreateShellResponse(response);
+      
+      this.shellId = shellId;
+      this.isConnected = true;
+      
+      const duration = Date.now() - startTime;
+      logger.logShellEvent('Shell opened successfully', shellId);
+      logger.logPerformance('openShell', duration, { shellId });
 
-  /**
-   * Get the raw output of a command, including whether it has finished executing
-   * @param {string} shell_id The shell id on the remote machine
-   * @param {string} command_id The command id on the remote machine
-   * @returns {Promise<[Buffer, Buffer, number, boolean]>} Returns a tuple with stdout, stderr, return code, and done status
-   * @throws {WinRMOperationTimeoutError} When there is no output from the command
-   */
-  async getCommandOutputRaw(shell_id, command_id) {
-    const req = {
-      'env:Envelope': this.buildWsmanHeader({
-        resource_uri: 'http://schemas.microsoft.com/wbem/wsman/1/windows/shell/cmd',
-        action: 'http://schemas.microsoft.com/wbem/wsman/1/windows/shell/Receive',
-        shell_id,
-      }),
-    };
-
-    req['env:Envelope']['env:Body'] = {
-      'rsp:Receive': {
-        'rsp:DesiredStream': {
-          '@CommandId': command_id,
-          '#text': 'stdout stderr',
-        },
-      },
-    };
-
-    const builder = new Builder();
-    const res = await this.transport.sendMessage(builder.buildObject(req));
-    const result = await parseStringPromise(res);
-
-    const stdout = [];
-    const stderr = [];
-    let return_code = -1;
-    let command_done = false;
-
-    // Get Response node
-    const receiveResponse = result['s:Envelope']['s:Body'][0]['rsp:ReceiveResponse'][0];
-
-    // Process stream output
-    if (receiveResponse['rsp:Stream']) {
-      for (const stream of receiveResponse['rsp:Stream']) {
-        const streamAttrs = stream.$;
-        if (streamAttrs.Name === 'stdout' && stream._) {
-          stdout.push(Buffer.from(stream._, 'base64'));
-        } else if (streamAttrs.Name === 'stderr' && stream._) {
-          stderr.push(Buffer.from(stream._, 'base64'));
-        }
-      }
-    }
-
-    // Check if command is done and get exit code
-    if (receiveResponse['rsp:CommandState']) {
-      const state = receiveResponse['rsp:CommandState'][0].$.State;
-      command_done = state.endsWith('CommandState/Done');
-      if (command_done && receiveResponse['rsp:CommandState'][0]['rsp:ExitCode']) {
-        return_code = parseInt(receiveResponse['rsp:CommandState'][0]['rsp:ExitCode'][0], 10);
-      }
-    }
-
-    return [
-      Buffer.concat(stdout),
-      Buffer.concat(stderr),
-      return_code,
-      command_done,
-    ];
-  }
-
-  /**
-   * Get the output of a command, waiting until it completes
-   * @param {string} shell_id The shell id on the remote machine
-   * @param {string} command_id The command id on the remote machine
-   * @returns {Promise<[Buffer, Buffer, number]>} Returns a tuple with stdout, stderr, and return code
-   */
-  async getCommandOutput(shell_id, command_id) {
-    const stdout_buffer = [];
-    const stderr_buffer = [];
-    let return_code = -1;
-    let command_done = false;
-
-    while (!command_done) {
-      try {
-        const [stdout, stderr, code, done] = await this.getCommandOutputRaw(shell_id, command_id);
-        if (stdout.length) stdout_buffer.push(stdout);
-        if (stderr.length) stderr_buffer.push(stderr);
-        return_code = code;
-        command_done = done;
-      } catch (error) {
-        if (error instanceof WinRMOperationTimeoutError) {
-          // This is expected for long-running processes, just retry
-          continue;
-        }
+    } catch (error) {
+      const duration = Date.now() - startTime;
+      logger.logShellEvent('Shell opening failed', null, { error: error.message, duration });
+      
+      if (error instanceof WinRMAuthenticationError || 
+          error instanceof WinRMConnectionError || 
+          error instanceof WinRMTimeoutError) {
         throw error;
       }
+      
+      throw new WinRMProtocolError(
+        `Failed to open shell: ${error.message}`,
+        'OPEN_SHELL',
+        { duration, originalError: error.message }
+      );
+    }
+  }
+
+  /**
+   * Close the WinRM shell
+   */
+  async closeShell() {
+    if (!this.isConnected) {
+      logger.warn('No shell to close, ignoring closeShell call');
+      return;
     }
 
-    return [
-      Buffer.concat(stdout_buffer),
-      Buffer.concat(stderr_buffer),
-      return_code,
-    ];
+    const startTime = Date.now();
+    logger.logShellEvent('Closing shell', this.shellId);
+
+    try {
+      const closeRequest = XMLUtils.buildCloseShell(this.shellId);
+      await this.httpClient.request('POST', closeRequest);
+      
+      const duration = Date.now() - startTime;
+      logger.logShellEvent('Shell closed successfully', this.shellId);
+      logger.logPerformance('closeShell', duration);
+
+    } catch (error) {
+      const duration = Date.now() - startTime;
+      logger.logShellEvent('Shell closing failed', this.shellId, { error: error.message, duration });
+      
+      // Don't throw on close failures, just log them
+      logger.warn('Shell close operation failed, but continuing cleanup', {
+        error: error.message,
+        duration
+      });
+    } finally {
+      this.isConnected = false;
+      this.shellId = null;
+    }
+  }
+
+  /**
+   * Run a command in the current shell
+   */
+  async runCommand(command, args = '') {
+    if (!this.isConnected) {
+      throw new WinRMProtocolError('Shell must be opened before running commands', 'RUN_COMMAND');
+    }
+
+    const fullCommand = args ? `${command} ${args}` : command;
+    const startTime = Date.now();
+    
+    logger.logCommand(fullCommand, null, this.shellId);
+
+    try {
+      const runRequest = XMLUtils.buildRunCommand(this.shellId, fullCommand);
+      const response = await this.httpClient.request('POST', runRequest);
+      
+      const commandId = await XMLUtils.parseRunCommandResponse(response);
+      
+      const duration = Date.now() - startTime;
+      logger.logCommand(fullCommand, commandId, this.shellId);
+      logger.logPerformance('runCommand', duration, { commandId });
+
+      return commandId;
+
+    } catch (error) {
+      const duration = Date.now() - startTime;
+      logger.logCommand(fullCommand, null, this.shellId, { error: error.message, duration });
+      
+      if (error instanceof WinRMConnectionError || 
+          error instanceof WinRMTimeoutError) {
+        throw error;
+      }
+      
+      throw new WinRMProtocolError(
+        `Failed to run command '${fullCommand}': ${error.message}`,
+        'RUN_COMMAND',
+        { command: fullCommand, duration, originalError: error.message }
+      );
+    }
+  }
+
+  /**
+   * Get output from a running command
+   */
+  async getCommandOutput(commandId) {
+    if (!this.isConnected) {
+      throw new WinRMProtocolError('Shell must be opened to get command output', 'GET_OUTPUT');
+    }
+
+    const startTime = Date.now();
+
+    try {
+      const outputRequest = XMLUtils.buildGetCommandOutput(this.shellId, commandId);
+      const response = await this.httpClient.request('POST', outputRequest);
+      
+      // Check for faults in the response
+      await XMLUtils.checkForFault(response);
+      
+      const output = await XMLUtils.parseCommandOutputResponse(response);
+      
+      const duration = Date.now() - startTime;
+      logger.logPerformance('getCommandOutput', duration, { commandId, hasOutput: !!output.stdout });
+
+      return output;
+
+    } catch (error) {
+      const duration = Date.now() - startTime;
+      
+      if (error instanceof WinRMConnectionError || 
+          error instanceof WinRMTimeoutError) {
+        throw error;
+      }
+      
+      throw new WinRMProtocolError(
+        `Failed to get command output for command ${commandId}: ${error.message}`,
+        'GET_OUTPUT',
+        { commandId, duration, originalError: error.message }
+      );
+    }
+  }
+
+  /**
+   * Clean up a command
+   */
+  async cleanupCommand(commandId) {
+    if (!this.isConnected) {
+      throw new WinRMProtocolError('Shell must be opened to cleanup commands', 'CLEANUP_COMMAND');
+    }
+
+    const startTime = Date.now();
+
+    try {
+      const cleanupRequest = XMLUtils.buildDeleteCommand(this.shellId, commandId);
+      await this.httpClient.request('POST', cleanupRequest);
+      
+      const duration = Date.now() - startTime;
+      logger.logPerformance('cleanupCommand', duration, { commandId });
+
+    } catch (error) {
+      const duration = Date.now() - startTime;
+      
+      // Don't throw on cleanup failures, just log them
+      logger.warn(`Command cleanup failed for command ${commandId}`, {
+        error: error.message,
+        duration
+      });
+    }
+  }
+
+  /**
+   * Wait for command to complete and return output
+   */
+  async waitForCommand(commandId, pollInterval = 1000) {
+    const startTime = Date.now();
+    let attempts = 0;
+
+    while (attempts * pollInterval < this.options.timeouts.operationTimeout) {
+      try {
+        const output = await this.getCommandOutput(commandId);
+        
+        // Check if command has completed (exitCode !== null typically indicates completion)
+        if (output.exitCode !== null && output.exitCode !== undefined) {
+          return output;
+        }
+      } catch (error) {
+        // Continue polling on transient errors
+        if (!(error instanceof WinRMConnectionError)) {
+          throw error;
+        }
+      }
+
+      await this.delay(pollInterval);
+      attempts++;
+    }
+
+    throw new WinRMTimeoutError(
+      `Command ${commandId} did not complete within operation timeout`,
+      'OPERATION_TIMEOUT',
+      { commandId, timeout: this.options.timeouts.operationTimeout, attempts }
+    );
+  }
+
+  /**
+   * Execute command and wait for completion
+   */
+  async runCommandAndWait(command, args = '', pollInterval = 1000) {
+    const commandId = await this.runCommand(command, args);
+    return await this.waitForCommand(commandId, pollInterval);
+  }
+
+  /**
+   * Perform authentication
+   */
+  async authenticate() {
+    if (this.authenticated) {
+      return;
+    }
+
+    const startTime = Date.now();
+    logger.info('Starting WinRM authentication');
+
+    try {
+      await this.authManager.authenticate(this.httpClient);
+      this.authenticated = true;
+      
+      const duration = Date.now() - startTime;
+      logger.info('WinRM authentication completed', { duration });
+      logger.logPerformance('authentication', duration);
+
+    } catch (error) {
+      const duration = Date.now() - startTime;
+      logger.error('WinRM authentication failed', { error: error.message, duration });
+      
+      if (error instanceof WinRMAuthenticationError) {
+        throw error;
+      }
+      
+      throw new WinRMAuthenticationError(
+        `Authentication failed: ${error.message}`,
+        this.options.auth.type,
+        { duration, originalError: error.message }
+      );
+    }
+  }
+
+  /**
+   * Check if connected
+   */
+  isShellOpen() {
+    return this.isConnected && this.shellId !== null;
+  }
+
+  /**
+   * Get connection status
+   */
+  getStatus() {
+    return {
+      connected: this.isConnected,
+      authenticated: this.authenticated,
+      shellId: this.shellId,
+      options: {
+        host: this.options.host,
+        port: this.options.port,
+        protocol: this.options.protocol
+      },
+      auth: this.authManager.getAuthInfo(),
+      httpClient: this.httpClient.getConnectionStats()
+    };
+  }
+
+  /**
+   * Test connectivity to the WinRM endpoint
+   */
+  async ping() {
+    try {
+      // Try to authenticate and open a shell
+      await this.authenticate();
+      await this.openShell();
+      await this.closeShell();
+      return true;
+    } catch (error) {
+      logger.warn('WinRM connectivity test failed', { error: error.message });
+      return false;
+    }
+  }
+
+  /**
+   * Clean up resources
+   */
+  async close() {
+    try {
+      if (this.isConnected) {
+        await this.closeShell();
+      }
+      await this.httpClient.close();
+    } catch (error) {
+      logger.warn('Error during cleanup', { error: error.message });
+    }
+  }
+
+  /**
+   * Utility function for delays
+   */
+  delay(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
   }
 }
+
+module.exports = Protocol;

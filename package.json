@@ -1,19 +1,56 @@
 {
   "name": "winner-m",
-  "version": "0.0.1",
-  "description": "A WinRM library for NodeJS",
-  "main": "index.js",
-  "type": "module",
+  "version": "1.0.0",
+  "description": "Winner-M: Advanced Windows Remote Management with Kerberos authentication support",
+  "main": "src/WinRM.js",
+  "types": "src/types/WinRMTypes.ts",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage",
+    "lint": "eslint src/**/*.js test/**/*.js",
+    "lint:fix": "eslint src/**/*.js test/**/*.js --fix",
+    "build": "tsc",
+    "build:watch": "tsc --watch",
+    "example": "node examples/basic-usage.js",
+    "prepublishOnly": "npm run build && npm test"
   },
-  "author": "Tim Kremer",
-  "license": "ISC",
+  "keywords": [
+    "winrm",
+    "windows",
+    "remote-management",
+    "kerberos",
+    "ntlm",
+    "authentication",
+    "powershell",
+    "cmd",
+    "wmi",
+    "automation"
+  ],
+  "author": "MiniMax Agent",
+  "license": "MIT",
+  "engines": {
+    "node": ">=16.0.0"
+  },
   "dependencies": {
-    "axios": "^1.9.0",
-    "axios-ntlm": "^1.4.4",
-    "https-proxy-agent": "^7.0.6",
-    "uuid": "^11.1.0",
-    "xml2js": "^0.6.2"
-  }
+    "xml2js": "^0.6.2",
+    "uuid": "^9.0.1",
+    "kerberos": "^2.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/uuid": "^9.0.0",
+    "@types/kerberos": "^2.0.0",
+    "eslint": "^8.0.0",
+    "jest": "^29.0.0",
+    "typescript": "^5.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ripfence/winner-m.git"
+  },
+  "bugs": {
+    "url": "https://github.com/ripfence/winner-m/issues"
+  },
+  "homepage": "https://github.com/ripfence/winner-m#readme"
 }
