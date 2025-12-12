@@ -1,3 +1,4 @@
+/* eslint-disable max-classes-per-file */
 /**
  * Custom error classes for WinRM operations
  */
@@ -12,7 +13,7 @@ class WinRMError extends Error {
     this.code = code;
     this.details = details;
     this.timestamp = new Date().toISOString();
-    
+
     // Maintains proper stack trace for where our error was thrown
     if (Error.captureStackTrace) {
       Error.captureStackTrace(this, WinRMError);
@@ -30,7 +31,7 @@ class WinRMError extends Error {
       message: this.message,
       details: this.details,
       timestamp: this.timestamp,
-      stack: this.stack
+      stack: this.stack,
     };
   }
 }
@@ -42,7 +43,7 @@ class WinRMAuthenticationError extends WinRMError {
   constructor(message, authMethod, details = {}) {
     super(message, 'AUTHENTICATION_FAILED', {
       authMethod,
-      ...details
+      ...details,
     });
     this.name = 'WinRMAuthenticationError';
   }
@@ -55,7 +56,7 @@ class WinRMConnectionError extends WinRMError {
   constructor(message, cause, details = {}) {
     super(message, 'CONNECTION_FAILED', {
       cause,
-      ...details
+      ...details,
     });
     this.name = 'WinRMConnectionError';
   }
@@ -71,7 +72,7 @@ class WinRMCommandError extends WinRMError {
       exitCode,
       stdout,
       stderr,
-      ...details
+      ...details,
     });
     this.name = 'WinRMCommandError';
   }
@@ -84,7 +85,7 @@ class WinRMConfigurationError extends WinRMError {
   constructor(message, parameter, details = {}) {
     super(message, 'CONFIGURATION_ERROR', {
       parameter,
-      ...details
+      ...details,
     });
     this.name = 'WinRMConfigurationError';
   }
@@ -97,7 +98,7 @@ class WinRMProtocolError extends WinRMError {
   constructor(message, operation, details = {}) {
     super(message, 'PROTOCOL_ERROR', {
       operation,
-      ...details
+      ...details,
     });
     this.name = 'WinRMProtocolError';
   }
@@ -110,7 +111,7 @@ class WinRMTimeoutError extends WinRMError {
   constructor(message, timeoutType, details = {}) {
     super(message, 'TIMEOUT', {
       timeoutType,
-      ...details
+      ...details,
     });
     this.name = 'WinRMTimeoutError';
   }
@@ -123,7 +124,7 @@ class WinRMSslError extends WinRMError {
   constructor(message, certificate, details = {}) {
     super(message, 'SSL_ERROR', {
       certificate,
-      ...details
+      ...details,
     });
     this.name = 'WinRMSslError';
   }
@@ -137,5 +138,5 @@ module.exports = {
   WinRMConfigurationError,
   WinRMProtocolError,
   WinRMTimeoutError,
-  WinRMSslError
+  WinRMSslError,
 };

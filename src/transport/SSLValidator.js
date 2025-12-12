@@ -1,6 +1,7 @@
-const { WinRMSslError } = require('../utils/ErrorTypes');
-const { logger } = require('../utils/Logging');
 const tls = require('tls');
+const fs = require('fs');
+const { WinRMSslError } = require('../utils/ErrorTypes.js');
+const { logger } = require('../utils/Logging.js');
 
 /**
  * SSL/TLS Certificate Validator for WinRM connections
@@ -16,32 +17,32 @@ class SSLValidator {
   /**
    * Create HTTPS agent with proper SSL/TLS configuration
    */
-  createHttpsAgent(options = {}) {
-    const sslOptions = this.buildSSLOptions(options);
-    
+  static createHttpsAgent(options = {}) {
+    const sslOptions = SSLValidator.buildSSLOptions(options);
+
     return new tls.Agent({
       keepAlive: true,
       keepAliveMsecs: 60000,
       maxFreeSockets: 5,
       maxSockets: options.maxConnections || 10,
       timeout: options.connectTimeout || 30000,
-      ...sslOptions
+      ...sslOptions,
     });
   }
 
   /**
    * Build comprehensive SSL/TLS options
    */
-  buildSSLOptions(options = {}) {
+  static buildSSLOptions(options = {}) {
     const sslOptions = {
       rejectUnauthorized: options.rejectUnauthorized !== false,
-      servername: options.servername
+      servername: options.servername,
     };
 
     // Custom CA certificate
     if (options.ca) {
       if (typeof options.ca === 'string') {
-        sslOptions.ca = this.loadCertificate(options.ca);
+        sslOptions.ca = SSLValidator.loadCertificate(options.ca);
       } else {
         sslOptions.ca = options.ca;
       }
@@ -49,8 +50,8 @@ class SSLValidator {
 
     // Client certificate for mutual TLS
     if (options.cert && options.key) {
-      sslOptions.cert = this.loadCertificate(options.cert);
-      sslOptions.key = this.loadPrivateKey(options.key);
+      sslOptions.cert = SSLValidator.loadCertificate(options.cert);
+      sslOptions.key = SSLValidator.loadPrivateKey(options.key);
       sslOptions.passphrase = options.passphrase;
     }
 
@@ -73,21 +74,19 @@ class SSLValidator {
   /**
    * Load certificate from file or string
    */
-  loadCertificate(certData) {
+  static loadCertificate(certData) {
     if (typeof certData === 'string') {
       try {
         // Try to detect if it's a file path or certificate data
         if (certData.includes('-----BEGIN CERTIFICATE-----')) {
           return certData;
-        } else {
-          // Assume it's a file path
-          const fs = require('fs');
-          return fs.readFileSync(certData);
         }
+        // Assume it's a file path
+        return fs.readFileSync(certData);
       } catch (error) {
         throw new WinRMSslError(
           `Failed to load certificate: ${error.message}`,
-          'CERTIFICATE_LOAD_ERROR'
+          'CERTIFICATE_LOAD_ERROR',
         );
       }
     }
@@ -97,21 +96,19 @@ class SSLValidator {
   /**
    * Load private key from file or string
    */
-  loadPrivateKey(keyData) {
+  static loadPrivateKey(keyData) {
     if (typeof keyData === 'string') {
       try {
         // Try to detect if it's a file path or key data
         if (keyData.includes('-----BEGIN')) {
           return keyData;
-        } else {
-          // Assume it's a file path
-          const fs = require('fs');
-          return fs.readFileSync(keyData);
         }
+        // Assume it's a file path
+        return fs.readFileSync(keyData);
       } catch (error) {
         throw new WinRMSslError(
           `Failed to load private key: ${error.message}`,
-          'KEY_LOAD_ERROR'
+          'KEY_LOAD_ERROR',
         );
       }
     }
@@ -123,7 +120,7 @@ class SSLValidator {
    */
   validateCertificate(host, port, cert) {
     const certKey = `${host}:${port}`;
-    
+
     logger.debug('Validating server certificate', {
       host,
       port,
@@ -131,7 +128,7 @@ class SSLValidator {
       issuer: cert.issuer,
       validFrom: cert.valid_from,
       validTo: cert.valid_to,
-      serialNumber: cert.serialNumber
+      serialNumber: cert.serialNumber,
     });
 
     // Check if certificate is already rejected
@@ -139,15 +136,15 @@ class SSLValidator {
       throw new WinRMSslError(
         'Certificate previously rejected',
         'CERTIFICATE_REJECTED',
-        { host, port, subject: cert.subject }
+        { host, port, subject: cert.subject },
       );
     }
 
     // Check certificate validity period
-    this.validateCertificateValidity(cert);
+    SSLValidator.validateCertificateValidity(cert);
 
     // Check hostname matches certificate
-    this.validateHostnameMatch(host, cert);
+    SSLValidator.validateHostnameMatch(host, cert);
 
     // Store certificate for future reference
     this.trustedCerts.set(certKey, cert);
@@ -158,7 +155,7 @@ class SSLValidator {
   /**
    * Validate certificate validity period
    */
-  validateCertificateValidity(cert) {
+  static validateCertificateValidity(cert) {
     const now = new Date();
     const validFrom = new Date(cert.valid_from);
     const validTo = new Date(cert.valid_to);
@@ -167,7 +164,7 @@ class SSLValidator {
       throw new WinRMSslError(
         'Certificate is not yet valid',
         'CERTIFICATE_NOT_YET_VALID',
-        { validFrom: validFrom.toISOString() }
+        { validFrom: validFrom.toISOString() },
       );
     }
 
@@ -175,7 +172,7 @@ class SSLValidator {
       throw new WinRMSslError(
         'Certificate has expired',
         'CERTIFICATE_EXPIRED',
-        { validTo: validTo.toISOString() }
+        { validTo: validTo.toISOString() },
       );
     }
   }
@@ -183,15 +180,15 @@ class SSLValidator {
   /**
    * Validate hostname matches certificate
    */
-  validateHostnameMatch(host, cert) {
-    const hostnames = this.extractHostnamesFromCert(cert);
-    const matched = hostnames.some(certHost => this.matchHostname(host, certHost));
+  static validateHostnameMatch(host, cert) {
+    const hostnames = SSLValidator.extractHostnamesFromCert(cert);
+    const matched = hostnames.some((certHost) => SSLValidator.matchHostname(host, certHost));
 
     if (!matched) {
       throw new WinRMSslError(
         'Hostname does not match certificate',
         'HOSTNAME_MISMATCH',
-        { host, certificateHostnames: hostnames }
+        { host, certificateHostnames: hostnames },
       );
     }
   }
@@ -199,7 +196,7 @@ class SSLValidator {
   /**
    * Extract hostnames from certificate
    */
-  extractHostnamesFromCert(cert) {
+  static extractHostnamesFromCert(cert) {
     const hostnames = [];
 
     // Check Subject Alternative Name (SAN) extension
@@ -227,7 +224,7 @@ class SSLValidator {
   /**
    * Match hostname against certificate hostname pattern
    */
-  matchHostname(host, certHost) {
+  static matchHostname(host, certHost) {
     const hostLower = host.toLowerCase();
     const certHostLower = certHost.toLowerCase();
 
@@ -248,15 +245,15 @@ class SSLValidator {
       }
 
       // Compare the last parts
-      for (let i = patternParts.length; i > 0; i--) {
+      for (let i = patternParts.length; i > 0; i -= 1) {
         const hostPart = hostParts[hostParts.length - i];
         const patternPart = patternParts[patternParts.length - i];
-        
+
         if (hostPart !== patternPart) {
           return false;
         }
       }
-      
+
       return true;
     }
 
@@ -270,11 +267,11 @@ class SSLValidator {
     const certKey = `${host}:${port}`;
     this.trustedCerts.set(certKey, cert);
     this.rejectedCerts.delete(certKey);
-    
+
     logger.info('Certificate trusted', {
       host,
       port,
-      subject: cert.subject
+      subject: cert.subject,
     });
   }
 
@@ -285,11 +282,11 @@ class SSLValidator {
     const certKey = `${host}:${port}`;
     this.rejectedCerts.add(certKey);
     this.trustedCerts.delete(certKey);
-    
+
     logger.warn('Certificate rejected', {
       host,
       port,
-      subject: cert.subject
+      subject: cert.subject,
     });
   }
 
@@ -301,7 +298,7 @@ class SSLValidator {
       key,
       subject: cert.subject,
       issuer: cert.issuer,
-      validTo: cert.valid_to
+      validTo: cert.valid_to,
     }));
   }
 
@@ -324,26 +321,26 @@ class SSLValidator {
   /**
    * Get SSL configuration recommendations
    */
-  getRecommendedConfig() {
+  static getRecommendedConfig() {
     return {
       protocol: 'https',
       port: 5986,
       ssl: {
-        rejectUnauthorized: true,  // Always validate certificates in production
-        minVersion: 'TLSv1.2',     // Minimum TLS 1.2
-        maxVersion: 'TLSv1.3',     // Maximum TLS 1.3
+        rejectUnauthorized: true, // Always validate certificates in production
+        minVersion: 'TLSv1.2', // Minimum TLS 1.2
+        maxVersion: 'TLSv1.3', // Maximum TLS 1.3
         ciphers: [
           'ECDHE+AESGCM',
           'ECDHE+CHACHA20',
           'DHE+AESGCM',
           'DHE+CHACHA20',
           '!aNULL',
-          '!MD5'
+          '!MD5',
         ].join(':'),
         // Security headers
         honorCipherOrder: true,
-        sessionTimeout: 300        // 5 minutes
-      }
+        sessionTimeout: 300, // 5 minutes
+      },
     };
   }
 
@@ -353,23 +350,23 @@ class SSLValidator {
   async testSSLConfig(host, port, config) {
     const testAgent = this.createHttpsAgent({
       ...config.ssl,
-      servername: host
+      servername: host,
     });
 
     return new Promise((resolve) => {
       const socket = testAgent.connect({
         host,
-        port
+        port,
       }, () => {
         const cert = socket.getPeerCertificate();
         const isValid = socket.authorized;
-        
+
         testAgent.destroy();
-        
+
         resolve({
           valid: isValid,
           certificate: cert,
-          error: socket.authorizationError
+          error: socket.authorizationError,
         });
       });
 
@@ -377,7 +374,7 @@ class SSLValidator {
         testAgent.destroy();
         resolve({
           valid: false,
-          error: error.message
+          error: error.message,
         });
       });
     });

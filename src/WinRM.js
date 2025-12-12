@@ -1,11 +1,14 @@
+/* eslint-disable no-unused-vars */
+/* eslint-disable global-require */
+/* eslint-disable max-len */
 /**
  * Main library entry point for winner-m (Windows Remote Management for JavaScript)
  * Provides easy access to Session, Protocol, and authentication classes
  */
 
-const Session = require('./Session');
-const Protocol = require('./Protocol');
-const AuthManager = require('./auth/AuthManager');
+const Session = require('./session.js');
+const Protocol = require('./protocol.js');
+const AuthManager = require('./auth/AuthManager.js');
 
 // Version information
 const VERSION = '1.1.0';
@@ -19,8 +22,8 @@ const {
   WinRMConfigurationError,
   WinRMProtocolError,
   WinRMTimeoutError,
-  WinRMSslError
-} = require('./utils/ErrorTypes');
+  WinRMSslError,
+} = require('./utils/ErrorTypes.js');
 
 /**
  * winner-m main class factory
@@ -57,7 +60,7 @@ class WinRM {
    * @param {string} credentials.workstation - Workstation name (optional)
    */
   static createNTLMAuth(credentials) {
-    const NTLMAuth = require('./auth/NTLMAuth');
+    const NTLMAuth = require('./auth/NTLMAuth.js');
     return new NTLMAuth(credentials);
   }
 
@@ -68,7 +71,7 @@ class WinRM {
    * @param {string} credentials.password - Password
    */
   static createBasicAuth(credentials) {
-    const BasicAuth = require('./auth/BasicAuth');
+    const BasicAuth = require('./auth/BasicAuth.js');
     return new BasicAuth(credentials);
   }
 
@@ -219,5 +222,5 @@ module.exports = {
   WinRMConfigurationError,
   WinRMProtocolError,
   WinRMTimeoutError,
-  WinRMSslError
+  WinRMSslError,
 };

@@ -36,25 +36,9 @@ class CredSSPAuth {
    * @throws {WinRMAuthenticationError} If required parameters are missing or invalid
    */
   constructor(options = {}) {
-    // Validate required credentials
+    // Store credentials
     this.username = options.username;
     this.password = options.password;
-    
-    if (!this.username) {
-      throw new WinRMAuthenticationError(
-        'Username is required for CredSSP authentication',
-        'credssp',
-        { parameter: 'username' }
-      );
-    }
-
-    if (!this.password) {
-      throw new WinRMAuthenticationError(
-        'Password is required for CredSSP authentication',
-        'credssp',
-        { parameter: 'password' }
-      );
-    }
 
     // Configuration
     this.domain = options.domain || '';
@@ -63,19 +47,10 @@ class CredSSPAuth {
     this.servicePrincipalName = options.servicePrincipalName;
     this.logger = options.logger || logger;
     this.delegateCredentials = options.delegateCredentials !== false; // default true
-    this.maxRetries = options.maxRetries || 3;
-
-    // Validate base authentication method
-    if (!['ntlm', 'kerberos'].includes(this.baseAuth)) {
-      throw new WinRMAuthenticationError(
-        `Invalid base authentication method: ${this.baseAuth}. Must be 'ntlm' or 'kerberos'`,
-        'credssp',
-        { parameter: 'baseAuth', value: this.baseAuth }
-      );
-    }
+    this.maxRetries = options.maxRetries !== undefined ? options.maxRetries : 3;
 
     // CredSSP Protocol Constants
-    this.CREDSSP_SIGNATURE = Buffer.from('CREDSRP', 'ascii');
+    this.CREDSSP_SIGNATURE = Buffer.from('CREDSSP', 'ascii');
     this.TSP_SIGNATURE = Buffer.from('TSP', 'ascii');
     
     /**
@@ -447,7 +422,6 @@ class CredSSPAuth {
     // [Signature: 6 bytes] + [Message type: 4 bytes] + [Message length: 4 bytes] + [Message data]
     
     const signature = this.CREDSSP_SIGNATURE;
-    const messageLength = 14; // 6 + 4 + 4 = 14 bytes header
     
     // Add challenge length if present
     const challengeLength = challenge ? challenge.length : 0;
@@ -455,7 +429,7 @@ class CredSSPAuth {
     // Add credentials length if present
     const credentialsLength = credentials ? credentials.length : 0;
     
-    const totalLength = messageLength + challengeLength + credentialsLength;
+    const totalLength = 14 + challengeLength + credentialsLength;
     const buffer = Buffer.alloc(totalLength);
     let offset = 0;
     
@@ -559,17 +533,17 @@ class CredSSPAuth {
    * @private
    */
   parseCredSSPMessage(messageBuffer) {
-    // Verify signature
-    const signature = messageBuffer.slice(0, 6);
+    // Verify signature (should be 7 bytes for 'CREDSSP')
+    const signature = messageBuffer.slice(0, 7);
     if (!signature.equals(this.CREDSSP_SIGNATURE)) {
       throw new Error('Invalid CredSSP signature in server response');
     }
     
     // Read message type
-    const messageType = messageBuffer.readUInt32LE(6);
+    const messageType = messageBuffer.readUInt32LE(7);
     
     // Read message length
-    const messageLength = messageBuffer.readUInt32LE(10);
+    const messageLength = messageBuffer.readUInt32LE(11);
     
     // Check for completion
     const isComplete = messageType === this.MessageType.CREDSSP_TYPE_TICKET;
@@ -579,7 +553,7 @@ class CredSSPAuth {
       messageLength: messageLength,
       isComplete: isComplete,
       success: true,
-      challenge: isComplete ? null : messageBuffer.slice(14), // Extract any challenge data
+      challenge: isComplete ? null : messageBuffer.slice(15), // Extract any challenge data (7 + 4 + 4 = 15)
       message: isComplete ? 'CredSSP authentication completed' : 'Further authentication required'
     };
   }
@@ -735,12 +709,12 @@ class CredSSPAuth {
       errors.push(`Invalid base authentication method: ${this.baseAuth}`);
     }
 
-    if (this.baseAuth === 'kerberos' && !this.domain) {
-      errors.push('Domain is required for Kerberos-based CredSSP authentication');
-    }
-
-    if (this.baseAuth === 'kerberos' && !this.servicePrincipalName && !this.domain) {
-      errors.push('Either servicePrincipalName or domain is required for Kerberos-based CredSSP');
+    if (this.baseAuth === 'kerberos') {
+      if (!this.servicePrincipalName && !this.domain) {
+        errors.push('Either servicePrincipalName or domain is required for Kerberos-based CredSSP');
+      } else if (!this.servicePrincipalName && this.domain && !this.domain.trim()) {
+        errors.push('Either servicePrincipalName or domain is required for Kerberos-based CredSSP');
+      }
     }
 
     return {

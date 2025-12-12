@@ -1,8 +1,10 @@
-const { WinRMProtocolError, WinRMConnectionError, WinRMAuthenticationError, WinRMTimeoutError } = require('./utils/ErrorTypes');
-const { logger } = require('./utils/Logging');
-const HttpClient = require('./transport/HttpClient');
-const AuthManager = require('./auth/AuthManager');
-const XMLUtils = require('./utils/XMLUtils');
+const {
+  WinRMProtocolError, WinRMConnectionError, WinRMAuthenticationError, WinRMTimeoutError,
+} = require('./utils/ErrorTypes.js');
+const { logger } = require('./utils/Logging.js');
+const HttpClient = require('./transport/HttpClient.js');
+const AuthManager = require('./auth/AuthManager.js');
+const XMLUtils = require('./utils/XMLUtils.js');
 
 /**
  * Low-level WinRM Protocol class
@@ -17,12 +19,12 @@ class Protocol {
     this.shellId = null;
     this.isConnected = false;
     this.authenticated = false;
-    
+
     logger.info('WinRM Protocol initialized', {
       host: this.options.host,
       port: this.options.port,
       protocol: this.options.protocol,
-      auth: this.authManager.getAuthInfo()
+      auth: this.authManager.getAuthInfo(),
     });
   }
 
@@ -34,7 +36,7 @@ class Protocol {
     for (const field of requiredFields) {
       if (!options[field]) {
         throw new WinRMProtocolError(`Required option missing: ${field}`, 'OPTIONS_VALIDATION', {
-          field
+          field,
         });
       }
     }
@@ -49,19 +51,19 @@ class Protocol {
         username: options.auth.username,
         password: options.auth.password,
         domain: options.auth.domain || '',
-        workstation: options.auth.workstation || 'JS-WINRM-CLIENT'
+        workstation: options.auth.workstation || 'JS-WINRM-CLIENT',
       },
       ssl: options.ssl || { rejectUnauthorized: true },
       timeouts: {
         connectTimeout: options.timeouts?.connectTimeout || 30000,
         readTimeout: options.timeouts?.readTimeout || 60000,
-        operationTimeout: options.timeouts?.operationTimeout || 60000
+        operationTimeout: options.timeouts?.operationTimeout || 60000,
       },
       retries: {
         maxRetries: options.retries?.maxRetries || 3,
-        retryDelay: options.retries?.retryDelay || 1000
+        retryDelay: options.retries?.retryDelay || 1000,
       },
-      maxConnections: options.maxConnections || 10
+      maxConnections: options.maxConnections || 10,
     };
   }
 
@@ -86,31 +88,30 @@ class Protocol {
       // Create the shell
       const shellRequest = XMLUtils.buildCreateShell();
       const response = await this.httpClient.request('POST', shellRequest);
-      
+
       // Parse response to get shell ID
       const shellId = await XMLUtils.parseCreateShellResponse(response);
-      
+
       this.shellId = shellId;
       this.isConnected = true;
-      
+
       const duration = Date.now() - startTime;
       logger.logShellEvent('Shell opened successfully', shellId);
       logger.logPerformance('openShell', duration, { shellId });
-
     } catch (error) {
       const duration = Date.now() - startTime;
       logger.logShellEvent('Shell opening failed', null, { error: error.message, duration });
-      
-      if (error instanceof WinRMAuthenticationError || 
-          error instanceof WinRMConnectionError || 
-          error instanceof WinRMTimeoutError) {
+
+      if (error instanceof WinRMAuthenticationError
+          || error instanceof WinRMConnectionError
+          || error instanceof WinRMTimeoutError) {
         throw error;
       }
-      
+
       throw new WinRMProtocolError(
         `Failed to open shell: ${error.message}`,
         'OPEN_SHELL',
-        { duration, originalError: error.message }
+        { duration, originalError: error.message },
       );
     }
   }
@@ -130,19 +131,18 @@ class Protocol {
     try {
       const closeRequest = XMLUtils.buildCloseShell(this.shellId);
       await this.httpClient.request('POST', closeRequest);
-      
+
       const duration = Date.now() - startTime;
       logger.logShellEvent('Shell closed successfully', this.shellId);
       logger.logPerformance('closeShell', duration);
-
     } catch (error) {
       const duration = Date.now() - startTime;
       logger.logShellEvent('Shell closing failed', this.shellId, { error: error.message, duration });
-      
+
       // Don't throw on close failures, just log them
       logger.warn('Shell close operation failed, but continuing cleanup', {
         error: error.message,
-        duration
+        duration,
       });
     } finally {
       this.isConnected = false;
@@ -160,34 +160,33 @@ class Protocol {
 
     const fullCommand = args ? `${command} ${args}` : command;
     const startTime = Date.now();
-    
+
     logger.logCommand(fullCommand, null, this.shellId);
 
     try {
       const runRequest = XMLUtils.buildRunCommand(this.shellId, fullCommand);
       const response = await this.httpClient.request('POST', runRequest);
-      
+
       const commandId = await XMLUtils.parseRunCommandResponse(response);
-      
+
       const duration = Date.now() - startTime;
       logger.logCommand(fullCommand, commandId, this.shellId);
       logger.logPerformance('runCommand', duration, { commandId });
 
       return commandId;
-
     } catch (error) {
       const duration = Date.now() - startTime;
       logger.logCommand(fullCommand, null, this.shellId, { error: error.message, duration });
-      
-      if (error instanceof WinRMConnectionError || 
-          error instanceof WinRMTimeoutError) {
+
+      if (error instanceof WinRMConnectionError
+          || error instanceof WinRMTimeoutError) {
         throw error;
       }
-      
+
       throw new WinRMProtocolError(
         `Failed to run command '${fullCommand}': ${error.message}`,
         'RUN_COMMAND',
-        { command: fullCommand, duration, originalError: error.message }
+        { command: fullCommand, duration, originalError: error.message },
       );
     }
   }
@@ -205,29 +204,28 @@ class Protocol {
     try {
       const outputRequest = XMLUtils.buildGetCommandOutput(this.shellId, commandId);
       const response = await this.httpClient.request('POST', outputRequest);
-      
+
       // Check for faults in the response
       await XMLUtils.checkForFault(response);
-      
+
       const output = await XMLUtils.parseCommandOutputResponse(response);
-      
+
       const duration = Date.now() - startTime;
       logger.logPerformance('getCommandOutput', duration, { commandId, hasOutput: !!output.stdout });
 
       return output;
-
     } catch (error) {
       const duration = Date.now() - startTime;
-      
-      if (error instanceof WinRMConnectionError || 
-          error instanceof WinRMTimeoutError) {
+
+      if (error instanceof WinRMConnectionError
+          || error instanceof WinRMTimeoutError) {
         throw error;
       }
-      
+
       throw new WinRMProtocolError(
         `Failed to get command output for command ${commandId}: ${error.message}`,
         'GET_OUTPUT',
-        { commandId, duration, originalError: error.message }
+        { commandId, duration, originalError: error.message },
       );
     }
   }
@@ -245,17 +243,16 @@ class Protocol {
     try {
       const cleanupRequest = XMLUtils.buildDeleteCommand(this.shellId, commandId);
       await this.httpClient.request('POST', cleanupRequest);
-      
+
       const duration = Date.now() - startTime;
       logger.logPerformance('cleanupCommand', duration, { commandId });
-
     } catch (error) {
       const duration = Date.now() - startTime;
-      
+
       // Don't throw on cleanup failures, just log them
       logger.warn(`Command cleanup failed for command ${commandId}`, {
         error: error.message,
-        duration
+        duration,
       });
     }
   }
@@ -270,7 +267,7 @@ class Protocol {
     while (attempts * pollInterval < this.options.timeouts.operationTimeout) {
       try {
         const output = await this.getCommandOutput(commandId);
-        
+
         // Check if command has completed (exitCode !== null typically indicates completion)
         if (output.exitCode !== null && output.exitCode !== undefined) {
           return output;
@@ -289,7 +286,7 @@ class Protocol {
     throw new WinRMTimeoutError(
       `Command ${commandId} did not complete within operation timeout`,
       'OPERATION_TIMEOUT',
-      { commandId, timeout: this.options.timeouts.operationTimeout, attempts }
+      { commandId, timeout: this.options.timeouts.operationTimeout, attempts },
     );
   }
 
@@ -315,23 +312,22 @@ class Protocol {
     try {
       await this.authManager.authenticate(this.httpClient);
       this.authenticated = true;
-      
+
       const duration = Date.now() - startTime;
       logger.info('WinRM authentication completed', { duration });
       logger.logPerformance('authentication', duration);
-
     } catch (error) {
       const duration = Date.now() - startTime;
       logger.error('WinRM authentication failed', { error: error.message, duration });
-      
+
       if (error instanceof WinRMAuthenticationError) {
         throw error;
       }
-      
+
       throw new WinRMAuthenticationError(
         `Authentication failed: ${error.message}`,
         this.options.auth.type,
-        { duration, originalError: error.message }
+        { duration, originalError: error.message },
       );
     }
   }
@@ -354,10 +350,10 @@ class Protocol {
       options: {
         host: this.options.host,
         port: this.options.port,
-        protocol: this.options.protocol
+        protocol: this.options.protocol,
       },
       auth: this.authManager.getAuthInfo(),
-      httpClient: this.httpClient.getConnectionStats()
+      httpClient: this.httpClient.getConnectionStats(),
     };
   }
 
@@ -395,7 +391,7 @@ class Protocol {
    * Utility function for delays
    */
   delay(ms) {
-    return new Promise(resolve => setTimeout(resolve, ms));
+    return new Promise((resolve) => setTimeout(resolve, ms));
   }
 }
 

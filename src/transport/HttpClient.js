@@ -1,7 +1,7 @@
 const https = require('https');
 const http = require('http');
-const { WinRMConnectionError, WinRMTimeoutError, WinRMProtocolError } = require('../utils/ErrorTypes');
-const { logger } = require('../utils/Logging');
+const { WinRMConnectionError, WinRMTimeoutError, WinRMProtocolError } = require('../utils/ErrorTypes.js');
+const { logger } = require('../utils/Logging.js');
 
 /**
  * HTTP client for WinRM connections with connection pooling and persistent connections
@@ -13,13 +13,13 @@ class HttpClient {
     this.path = options.path || '/wsman';
     this.timeout = options.timeouts?.connectTimeout || 30000;
     this.keepAlive = true;
-    
+
     // Configure SSL/TLS options
     this.sslOptions = this.buildSSLOptions(options.ssl || {});
-    
+
     // Create HTTP agent for connection pooling
     this.agent = this.createAgent();
-    
+
     // Connection tracking
     this.activeConnections = 0;
     this.maxConnections = options.maxConnections || 10;
@@ -35,7 +35,7 @@ class HttpClient {
       cert: sslConfig.cert,
       key: sslConfig.key,
       passphrase: sslConfig.passphrase,
-      servername: this.options.host
+      servername: this.options.host,
     };
   }
 
@@ -50,17 +50,16 @@ class HttpClient {
         maxFreeSockets: 5,
         maxSockets: this.maxConnections,
         timeout: this.timeout,
-        ...this.sslOptions
-      });
-    } else {
-      return new http.Agent({
-        keepAlive: this.keepAlive,
-        keepAliveMsecs: 60000,
-        maxFreeSockets: 5,
-        maxSockets: this.maxConnections,
-        timeout: this.timeout
+        ...this.sslOptions,
       });
     }
+    return new http.Agent({
+      keepAlive: this.keepAlive,
+      keepAliveMsecs: 60000,
+      maxFreeSockets: 5,
+      maxSockets: this.maxConnections,
+      timeout: this.timeout,
+    });
   }
 
   /**
@@ -73,25 +72,25 @@ class HttpClient {
       headers: {
         'Content-Type': 'application/soap+xml; charset=UTF-8',
         'User-Agent': 'JS-WinRM/1.0',
-        'Connection': this.keepAlive ? 'keep-alive' : 'close',
-        ...headers
+        Connection: this.keepAlive ? 'keep-alive' : 'close',
+        ...headers,
       },
       timeout: this.options.timeouts?.readTimeout || 60000,
-      agent: this.agent
+      agent: this.agent,
     };
 
     const requestStart = Date.now();
-    
+
     try {
       logger.logHttpRequest(method, `${this.baseURL}${this.path}`, requestOptions.headers, data);
-      
+
       const response = await this.performRequest(requestOptions, data);
-      const responseData = await this.readResponse(response);
-      
+      const responseData = await HttpClient.readResponse(response);
+
       const responseTime = Date.now() - requestStart;
       logger.logPerformance('HTTP Request', responseTime, {
         method,
-        statusCode: response.statusCode
+        statusCode: response.statusCode,
       });
 
       // Check for authentication challenges
@@ -99,7 +98,7 @@ class HttpClient {
         const authHeader = response.headers['www-authenticate'];
         if (authHeader && authHeader.includes('NTLM')) {
           throw new WinRMProtocolError('NTLM authentication required', 'AUTHENTICATION_CHALLENGE', {
-            authHeader
+            authHeader,
           });
         }
       }
@@ -109,20 +108,19 @@ class HttpClient {
         throw new WinRMConnectionError(
           `HTTP ${response.statusCode}: ${response.statusMessage}`,
           null,
-          { statusCode: response.statusCode, statusMessage: response.statusMessage, body: responseData }
+          { statusCode: response.statusCode, statusMessage: response.statusMessage, body: responseData },
         );
       }
 
       logger.logHttpResponse(response.statusCode, response.headers, responseData);
       return responseData;
-      
     } catch (error) {
       // Handle timeout errors
       if (error.code === 'ETIMEDOUT' || error.code === 'ESOCKETTIMEDOUT') {
         throw new WinRMTimeoutError('Connection timeout', 'CONNECT_TIMEOUT', {
           timeout: this.timeout,
           method,
-          url: `${this.baseURL}${this.path}`
+          url: `${this.baseURL}${this.path}`,
         });
       }
 
@@ -134,23 +132,23 @@ class HttpClient {
           {
             host: this.options.host,
             port: this.options.port,
-            protocol: this.options.protocol
-          }
+            protocol: this.options.protocol,
+          },
         );
       }
 
       // Re-throw WinRM-specific errors
-      if (error instanceof WinRMTimeoutError || 
-          error instanceof WinRMConnectionError || 
-          error instanceof WinRMProtocolError) {
+      if (error instanceof WinRMTimeoutError
+          || error instanceof WinRMConnectionError
+          || error instanceof WinRMProtocolError) {
         throw error;
       }
 
       // Handle other errors with retry logic
       if (retryCount < (this.options.retries?.maxRetries || 3) && this.isRetryableError(error)) {
-        const delay = this.options.retries?.retryDelay || 1000 * Math.pow(2, retryCount);
+        const delay = this.options.retries?.retryDelay || 1000 * 2 ** retryCount;
         logger.warn(`Retrying request in ${delay}ms (attempt ${retryCount + 1})`, { error: error.message });
-        await this.delay(delay);
+        await HttpClient.delay(delay);
         return this.request(method, data, headers, retryCount + 1);
       }
 
@@ -158,7 +156,7 @@ class HttpClient {
       throw new WinRMConnectionError(
         `HTTP request failed: ${error.message}`,
         error.code,
-        { method, url: `${this.baseURL}${this.path}` }
+        { method, url: `${this.baseURL}${this.path}` },
       );
     }
   }
@@ -169,21 +167,21 @@ class HttpClient {
   performRequest(options, data = null) {
     return new Promise((resolve, reject) => {
       const client = this.options.protocol === 'https' ? https : http;
-      
-      this.activeConnections++;
-      
+
+      this.activeConnections += 1;
+
       const req = client.request(options, (res) => {
-        this.activeConnections--;
+        this.activeConnections -= 1;
         resolve(res);
       });
 
       req.on('error', (error) => {
-        this.activeConnections--;
+        this.activeConnections -= 1;
         reject(error);
       });
 
       req.on('timeout', () => {
-        this.activeConnections--;
+        this.activeConnections -= 1;
         req.destroy();
         const timeoutError = new Error('Request timeout');
         timeoutError.code = 'ETIMEDOUT';
@@ -201,10 +199,10 @@ class HttpClient {
   /**
    * Read and buffer response data
    */
-  readResponse(response) {
+  static readResponse(response) {
     return new Promise((resolve, reject) => {
       let data = '';
-      
+
       response.on('data', (chunk) => {
         data += chunk;
       });
@@ -224,16 +222,20 @@ class HttpClient {
    */
   isRetryableError(error) {
     // Retry on connection errors and temporary HTTP errors
-    return error.code === 'ECONNRESET' || 
-           error.code === 'ECONNABORTED' ||
-           (error.statusCode >= 500 && error.statusCode < 600);
+    const maxRetries = this.options.retries?.maxRetries || 3;
+    return (error.code === 'ECONNRESET'
+           || error.code === 'ECONNABORTED'
+           || (error.statusCode >= 500 && error.statusCode < 600))
+           && maxRetries > 0;
   }
 
   /**
    * Delay utility
    */
-  delay(ms) {
-    return new Promise(resolve => setTimeout(resolve, ms));
+  static delay(ms) {
+    return new Promise((resolve) => {
+      setTimeout(resolve, ms);
+    });
   }
 
   /**
@@ -243,7 +245,7 @@ class HttpClient {
     return {
       activeConnections: this.activeConnections,
       maxConnections: this.maxConnections,
-      keepAlive: this.keepAlive
+      keepAlive: this.keepAlive,
     };
   }
 

@@ -1,5 +1,5 @@
-const KerberosAuth = require('../src/auth/KerberosAuth');
-const { WinRMAuthenticationError } = require('../src/utils/ErrorTypes');
+const KerberosAuth = require('../src/auth/KerberosAuth.js');
+const { WinRMAuthenticationError } = require('../src/utils/ErrorTypes.js');
 
 /**
  * Comprehensive test suite for Kerberos Authentication
@@ -18,7 +18,7 @@ describe('KerberosAuth', () => {
   beforeEach(() => {
     // Create mock HTTP client
     mockHttpClient = {
-      request: jest.fn()
+      request: jest.fn(),
     };
 
     // Create mock logger
@@ -26,14 +26,14 @@ describe('KerberosAuth', () => {
       logAuthEvent: jest.fn(),
       debug: jest.fn(),
       warn: jest.fn(),
-      error: jest.fn()
+      error: jest.fn(),
     };
 
     // Mock the kerberos module
     mockKerberos = {
-      initializeClient: jest.fn()
+      initializeClient: jest.fn(),
     };
-    
+
     jest.mock('kerberos', () => mockKerberos);
   });
 
@@ -48,7 +48,7 @@ describe('KerberosAuth', () => {
         username: 'testuser',
         password: 'testpass',
         domain: 'DOMAIN',
-        hostname: 'test.example.com'
+        hostname: 'test.example.com',
       });
 
       expect(kerberosAuth.servicePrincipal).toBe('HTTP/test.example.com@DOMAIN');
@@ -64,7 +64,7 @@ describe('KerberosAuth', () => {
         hostname: 'server1',
         domain: 'CORP.EXAMPLE.COM',
         username: 'testuser',
-        password: 'testpass'
+        password: 'testpass',
       });
 
       expect(kerberosAuth.servicePrincipal).toBe('HTTP/server1@CORP.EXAMPLE.COM');
@@ -74,7 +74,7 @@ describe('KerberosAuth', () => {
 
     test('should create instance with minimal required parameters', () => {
       const kerberosAuth = new KerberosAuth({
-        servicePrincipal: 'HTTP/minimal@DOMAIN'
+        servicePrincipal: 'HTTP/minimal@DOMAIN',
       });
 
       expect(kerberosAuth.servicePrincipal).toBe('HTTP/minimal@DOMAIN');
@@ -89,12 +89,12 @@ describe('KerberosAuth', () => {
         kdcHost: 'kdc.corp.example.com',
         kdcPort: 88,
         timeout: 30000,
-        encryptionTypes: ['aes256-cts-hmac-sha1-96', 'aes128-cts-hmac-sha1-96']
+        encryptionTypes: ['aes256-cts-hmac-sha1-96', 'aes128-cts-hmac-sha1-96'],
       };
 
       const kerberosAuth = new KerberosAuth({
         servicePrincipal: 'HTTP/test.example.com@DOMAIN',
-        kdcOptions: kdcOptions
+        kdcOptions,
       });
 
       expect(kerberosAuth.kdcOptions).toEqual(kdcOptions);
@@ -103,7 +103,7 @@ describe('KerberosAuth', () => {
     test('should create instance with custom retry count', () => {
       const kerberosAuth = new KerberosAuth({
         servicePrincipal: 'HTTP/test.example.com@DOMAIN',
-        maxRetries: 5
+        maxRetries: 5,
       });
 
       expect(kerberosAuth.maxRetries).toBe(5);
@@ -112,7 +112,7 @@ describe('KerberosAuth', () => {
     test('should create instance with mutual authentication disabled', () => {
       const kerberosAuth = new KerberosAuth({
         servicePrincipal: 'HTTP/test.example.com@DOMAIN',
-        mutualAuthentication: false
+        mutualAuthentication: false,
       });
 
       expect(kerberosAuth.mutualAuthentication).toBe(false);
@@ -120,7 +120,7 @@ describe('KerberosAuth', () => {
 
     test('should use default logger when none provided', () => {
       const kerberosAuth = new KerberosAuth({
-        servicePrincipal: 'HTTP/test.example.com@DOMAIN'
+        servicePrincipal: 'HTTP/test.example.com@DOMAIN',
       });
 
       expect(kerberosAuth.logger).toBeDefined();
@@ -130,12 +130,12 @@ describe('KerberosAuth', () => {
     test('should use provided logger when specified', () => {
       const customLogger = {
         logAuthEvent: jest.fn(),
-        debug: jest.fn()
+        debug: jest.fn(),
       };
 
       const kerberosAuth = new KerberosAuth({
         servicePrincipal: 'HTTP/test.example.com@DOMAIN',
-        logger: customLogger
+        logger: customLogger,
       });
 
       expect(kerberosAuth.logger).toBe(customLogger);
@@ -145,13 +145,13 @@ describe('KerberosAuth', () => {
       expect(() => {
         new KerberosAuth({
           servicePrincipal: null,
-          username: 'testuser'
+          username: 'testuser',
         });
       }).toThrow(WinRMAuthenticationError);
       expect(() => {
         new KerberosAuth({
           servicePrincipal: null,
-          username: 'testuser'
+          username: 'testuser',
         });
       }).toThrow('Service principal is required for Kerberos authentication');
     });
@@ -160,20 +160,20 @@ describe('KerberosAuth', () => {
       expect(() => {
         new KerberosAuth({
           servicePrincipal: '',
-          username: 'testuser'
+          username: 'testuser',
         });
       }).toThrow(WinRMAuthenticationError);
       expect(() => {
         new KerberosAuth({
           servicePrincipal: '',
-          username: 'testuser'
+          username: 'testuser',
         });
       }).toThrow('Service principal is required for Kerberos authentication');
     });
 
     test('should generate default service principal when none provided and domain is empty', () => {
       const kerberosAuth = new KerberosAuth({
-        hostname: 'localhost'
+        hostname: 'localhost',
       });
 
       expect(kerberosAuth.servicePrincipal).toBe('HTTP/localhost');
@@ -190,11 +190,11 @@ describe('KerberosAuth', () => {
           kdcHost: 'kdc.enterprise.corp',
           kdcPort: 88,
           timeout: 45000,
-          encryptionTypes: ['aes256-cts-hmac-sha1-96', 'aes128-cts-hmac-sha1-96']
+          encryptionTypes: ['aes256-cts-hmac-sha1-96', 'aes128-cts-hmac-sha1-96'],
         },
         maxRetries: 5,
         mutualAuthentication: false,
-        logger: mockLogger
+        logger: mockLogger,
       };
 
       const kerberosAuth = new KerberosAuth(enterpriseConfig);
@@ -209,10 +209,10 @@ describe('KerberosAuth', () => {
     });
 
     test('should handle very long service principal names', () => {
-      const longSPN = 'HTTP/' + 'a'.repeat(100) + '@' + 'b'.repeat(100);
+      const longSPN = `HTTP/${'a'.repeat(100)}@${'b'.repeat(100)}`;
 
       const kerberosAuth = new KerberosAuth({
-        servicePrincipal: longSPN
+        servicePrincipal: longSPN,
       });
 
       expect(kerberosAuth.servicePrincipal).toBe(longSPN);
@@ -221,7 +221,7 @@ describe('KerberosAuth', () => {
     test('should handle special characters in hostname', () => {
       const kerberosAuth = new KerberosAuth({
         hostname: 'test-server-01',
-        domain: 'DOMAIN.COM'
+        domain: 'DOMAIN.COM',
       });
 
       expect(kerberosAuth.servicePrincipal).toBe('HTTP/test-server-01@DOMAIN.COM');
@@ -230,7 +230,7 @@ describe('KerberosAuth', () => {
     test('should handle FQDN correctly', () => {
       const kerberosAuth = new KerberosAuth({
         hostname: 'server.domain.com',
-        domain: 'PARENT.DOMAIN.COM'
+        domain: 'PARENT.DOMAIN.COM',
       });
 
       expect(kerberosAuth.servicePrincipal).toBe('HTTP/server.domain.com@PARENT.DOMAIN.COM');
@@ -282,7 +282,7 @@ describe('KerberosAuth', () => {
 
     test('getServicePrincipal should return configured SPN', () => {
       const kerberosAuth = new KerberosAuth({
-        servicePrincipal: 'HTTP/test.example.com@DOMAIN'
+        servicePrincipal: 'HTTP/test.example.com@DOMAIN',
       });
 
       expect(kerberosAuth.getServicePrincipal()).toBe('HTTP/test.example.com@DOMAIN');
@@ -291,7 +291,7 @@ describe('KerberosAuth', () => {
     test('getServicePrincipal should work with auto-generated SPN', () => {
       const kerberosAuth = new KerberosAuth({
         hostname: 'server1',
-        domain: 'DOMAIN'
+        domain: 'DOMAIN',
       });
 
       expect(kerberosAuth.getServicePrincipal()).toBe('HTTP/server1@DOMAIN');
@@ -303,7 +303,7 @@ describe('KerberosAuth', () => {
       const kerberosAuth = new KerberosAuth({
         servicePrincipal: 'HTTP/test.example.com@DOMAIN',
         hostname: 'test.example.com',
-        domain: 'DOMAIN'
+        domain: 'DOMAIN',
       });
 
       const validation = kerberosAuth.validateConfig();
@@ -314,7 +314,7 @@ describe('KerberosAuth', () => {
     test('should return invalid configuration for missing service principal', () => {
       const kerberosAuth = new KerberosAuth({
         hostname: 'test.example.com',
-        domain: 'DOMAIN'
+        domain: 'DOMAIN',
       });
 
       // Manually set invalid value to test validation
@@ -328,7 +328,7 @@ describe('KerberosAuth', () => {
     test('should return invalid configuration for missing hostname', () => {
       const kerberosAuth = new KerberosAuth({
         servicePrincipal: 'HTTP/test.example.com@DOMAIN',
-        domain: 'DOMAIN'
+        domain: 'DOMAIN',
       });
 
       // Manually set invalid value to test validation
@@ -343,7 +343,7 @@ describe('KerberosAuth', () => {
       const kerberosAuth = new KerberosAuth({
         servicePrincipal: 'HTTP/test.example.com@WRONG-DOMAIN',
         hostname: 'test.example.com',
-        domain: 'CORRECT-DOMAIN'
+        domain: 'CORRECT-DOMAIN',
       });
 
       const validation = kerberosAuth.validateConfig();
@@ -355,7 +355,7 @@ describe('KerberosAuth', () => {
       const kerberosAuth = new KerberosAuth({
         servicePrincipal: 'HTTP/test.example.com',
         hostname: 'test.example.com',
-        domain: 'DOMAIN'
+        domain: 'DOMAIN',
       });
 
       const validation = kerberosAuth.validateConfig();
@@ -367,7 +367,7 @@ describe('KerberosAuth', () => {
       const kerberosAuth = new KerberosAuth({
         servicePrincipal: 'HTTP/test.example.com@domain.com',
         hostname: 'test.example.com',
-        domain: 'DOMAIN.COM'
+        domain: 'DOMAIN.COM',
       });
 
       const validation = kerberosAuth.validateConfig();
@@ -382,7 +382,7 @@ describe('KerberosAuth', () => {
         domain: 'ENTERPRISE.CORP',
         kdcOptions: { timeout: 30000 },
         maxRetries: 5,
-        mutualAuthentication: false
+        mutualAuthentication: false,
       });
 
       const validation = kerberosAuth.validateConfig();
@@ -393,7 +393,7 @@ describe('KerberosAuth', () => {
     test('should detect multiple configuration issues', () => {
       const kerberosAuth = new KerberosAuth({
         servicePrincipal: '',
-        hostname: ''
+        hostname: '',
       });
 
       const validation = kerberosAuth.validateConfig();
@@ -408,14 +408,14 @@ describe('KerberosAuth', () => {
         servicePrincipal: 'HTTP/test.example.com@DOMAIN',
         username: 'testuser',
         password: 'testpass',
-        logger: mockLogger
+        logger: mockLogger,
       });
 
       // Mock successful GSS client initialization
       const mockGssClient = {
         step: jest.fn((token, callback) => {
           callback(null, 'completed-token');
-        })
+        }),
       };
 
       mockKerberos.initializeClient.mockImplementation((spn, options, callback) => {
@@ -425,7 +425,7 @@ describe('KerberosAuth', () => {
       // Mock successful server response
       mockHttpClient.request.mockResolvedValue({
         success: true,
-        response: 'success'
+        response: 'success',
       });
 
       const result = await kerberosAuth.authenticate(mockHttpClient);
@@ -434,8 +434,8 @@ describe('KerberosAuth', () => {
       expect(mockLogger.logAuthEvent).toHaveBeenCalledWith(
         'Starting Kerberos authentication',
         expect.objectContaining({
-          servicePrincipal: 'HTTP/test.example.com@DOMAIN'
-        })
+          servicePrincipal: 'HTTP/test.example.com@DOMAIN',
+        }),
       );
     });
 
@@ -444,7 +444,7 @@ describe('KerberosAuth', () => {
         servicePrincipal: 'HTTP/test.example.com@DOMAIN',
         username: 'testuser',
         password: 'testpass',
-        logger: mockLogger
+        logger: mockLogger,
       });
 
       const mockGssClient = {
@@ -457,7 +457,7 @@ describe('KerberosAuth', () => {
           })
           .mockImplementationOnce((token, callback) => {
             callback(null, 'final-complete-response');
-          })
+          }),
       };
 
       mockKerberos.initializeClient.mockImplementation((spn, options, callback) => {
@@ -471,12 +471,12 @@ describe('KerberosAuth', () => {
         if (step < 3) {
           return Promise.resolve({
             success: false,
-            challenge: `step${step}-challenge`
+            challenge: `step${step}-challenge`,
           });
         }
         return Promise.resolve({
           success: true,
-          response: 'complete'
+          response: 'complete',
         });
       });
 
@@ -488,7 +488,7 @@ describe('KerberosAuth', () => {
 
     test('should extract Kerberos challenge from response body', () => {
       const kerberosAuth = new KerberosAuth({
-        servicePrincipal: 'HTTP/test.example.com@DOMAIN'
+        servicePrincipal: 'HTTP/test.example.com@DOMAIN',
       });
 
       const responseBody = `
@@ -503,7 +503,7 @@ describe('KerberosAuth', () => {
 
     test('should handle response body without Kerberos challenge', () => {
       const kerberosAuth = new KerberosAuth({
-        servicePrincipal: 'HTTP/test.example.com@DOMAIN'
+        servicePrincipal: 'HTTP/test.example.com@DOMAIN',
       });
 
       const responseBody = `
@@ -518,7 +518,7 @@ describe('KerberosAuth', () => {
 
     test('should parse Kerberos response correctly', () => {
       const kerberosAuth = new KerberosAuth({
-        servicePrincipal: 'HTTP/test.example.com@DOMAIN'
+        servicePrincipal: 'HTTP/test.example.com@DOMAIN',
       });
 
       const response = 'test-token';
@@ -530,7 +530,7 @@ describe('KerberosAuth', () => {
 
     test('should handle null response parsing', () => {
       const kerberosAuth = new KerberosAuth({
-        servicePrincipal: 'HTTP/test.example.com@DOMAIN'
+        servicePrincipal: 'HTTP/test.example.com@DOMAIN',
       });
 
       const parsed = kerberosAuth.parseKerberosResponse(null);
@@ -541,7 +541,7 @@ describe('KerberosAuth', () => {
 
     test('should detect complete Kerberos response', () => {
       const kerberosAuth = new KerberosAuth({
-        servicePrincipal: 'HTTP/test.example.com@DOMAIN'
+        servicePrincipal: 'HTTP/test.example.com@DOMAIN',
       });
 
       expect(kerberosAuth.isCompleteKerberosResponse('valid-token')).toBe(true);
@@ -555,13 +555,13 @@ describe('KerberosAuth', () => {
         servicePrincipal: 'HTTP/test.example.com@DOMAIN',
         username: 'testuser',
         password: 'testpass',
-        logger: mockLogger
+        logger: mockLogger,
       });
 
       const mockGssClient = {
         step: jest.fn((token, callback) => {
           callback(null, 'completed-token');
-        })
+        }),
       };
 
       mockKerberos.initializeClient.mockImplementation((spn, options, callback) => {
@@ -570,7 +570,7 @@ describe('KerberosAuth', () => {
 
       mockHttpClient.request.mockResolvedValue({
         success: true,
-        response: 'success'
+        response: 'success',
       });
 
       await kerberosAuth.authenticate(mockHttpClient);
@@ -578,12 +578,12 @@ describe('KerberosAuth', () => {
       expect(mockLogger.logAuthEvent).toHaveBeenCalledWith(
         'Starting Kerberos authentication',
         expect.objectContaining({
-          servicePrincipal: 'HTTP/test.example.com@DOMAIN'
-        })
+          servicePrincipal: 'HTTP/test.example.com@DOMAIN',
+        }),
       );
 
       expect(mockLogger.logAuthEvent).toHaveBeenCalledWith(
-        'Kerberos authentication completed successfully'
+        'Kerberos authentication completed successfully',
       );
     });
 
@@ -592,13 +592,13 @@ describe('KerberosAuth', () => {
         servicePrincipal: 'HTTP/test.example.com@DOMAIN',
         username: 'testuser',
         password: 'testpass',
-        logger: mockLogger
+        logger: mockLogger,
       });
 
       const mockGssClient = {
         step: jest.fn((token, callback) => {
           callback(null, 'completed-token');
-        })
+        }),
       };
 
       mockKerberos.initializeClient.mockImplementation((spn, options, callback) => {
@@ -607,7 +607,7 @@ describe('KerberosAuth', () => {
 
       mockHttpClient.request.mockResolvedValue({
         success: true,
-        response: 'success'
+        response: 'success',
       });
 
       const startTime = Date.now();
@@ -625,12 +625,12 @@ describe('KerberosAuth', () => {
         kdcHost: 'kdc.example.com',
         kdcPort: 88,
         timeout: 30000,
-        encryptionTypes: ['aes256-cts-hmac-sha1-96', 'aes128-cts-hmac-sha1-96']
+        encryptionTypes: ['aes256-cts-hmac-sha1-96', 'aes128-cts-hmac-sha1-96'],
       };
 
       const kerberosAuth = new KerberosAuth({
         servicePrincipal: 'HTTP/test.example.com@DOMAIN',
-        kdcOptions: kdcOptions
+        kdcOptions,
       });
 
       expect(kerberosAuth.kdcOptions).toEqual(kdcOptions);
@@ -639,7 +639,7 @@ describe('KerberosAuth', () => {
     test('should validate empty KDC options', () => {
       const kerberosAuth = new KerberosAuth({
         servicePrincipal: 'HTTP/test.example.com@DOMAIN',
-        kdcOptions: {}
+        kdcOptions: {},
       });
 
       expect(kerberosAuth.kdcOptions).toEqual({});
@@ -647,7 +647,7 @@ describe('KerberosAuth', () => {
 
     test('should handle undefined KDC options', () => {
       const kerberosAuth = new KerberosAuth({
-        servicePrincipal: 'HTTP/test.example.com@DOMAIN'
+        servicePrincipal: 'HTTP/test.example.com@DOMAIN',
       });
 
       expect(kerberosAuth.kdcOptions).toEqual({});
@@ -656,7 +656,7 @@ describe('KerberosAuth', () => {
     test('should validate maxRetries configuration', () => {
       const kerberosAuth = new KerberosAuth({
         servicePrincipal: 'HTTP/test.example.com@DOMAIN',
-        maxRetries: 10
+        maxRetries: 10,
       });
 
       expect(kerberosAuth.maxRetries).toBe(10);
@@ -665,12 +665,12 @@ describe('KerberosAuth', () => {
     test('should validate mutualAuthentication configuration', () => {
       const kerberosAuth1 = new KerberosAuth({
         servicePrincipal: 'HTTP/test.example.com@DOMAIN',
-        mutualAuthentication: true
+        mutualAuthentication: true,
       });
 
       const kerberosAuth2 = new KerberosAuth({
         servicePrincipal: 'HTTP/test.example.com@DOMAIN',
-        mutualAuthentication: false
+        mutualAuthentication: false,
       });
 
       expect(kerberosAuth1.mutualAuthentication).toBe(true);
@@ -679,7 +679,7 @@ describe('KerberosAuth', () => {
 
     test('should use default mutualAuthentication when not specified', () => {
       const kerberosAuth = new KerberosAuth({
-        servicePrincipal: 'HTTP/test.example.com@DOMAIN'
+        servicePrincipal: 'HTTP/test.example.com@DOMAIN',
       });
 
       expect(kerberosAuth.mutualAuthentication).toBe(true);
@@ -687,7 +687,7 @@ describe('KerberosAuth', () => {
 
     test('should validate hostname extraction from service principal', () => {
       const kerberosAuth = new KerberosAuth({
-        servicePrincipal: 'HTTP/test.example.com@DOMAIN'
+        servicePrincipal: 'HTTP/test.example.com@DOMAIN',
       });
 
       expect(kerberosAuth.hostname).toBe('test.example.com');
@@ -695,7 +695,7 @@ describe('KerberosAuth', () => {
 
     test('should validate domain extraction from service principal', () => {
       const kerberosAuth = new KerberosAuth({
-        servicePrincipal: 'HTTP/test.example.com@DOMAIN'
+        servicePrincipal: 'HTTP/test.example.com@DOMAIN',
       });
 
       expect(kerberosAuth.domain).toBe('DOMAIN');
@@ -703,7 +703,7 @@ describe('KerberosAuth', () => {
 
     test('should handle service principal without domain', () => {
       const kerberosAuth = new KerberosAuth({
-        servicePrincipal: 'HTTP/test.example.com'
+        servicePrincipal: 'HTTP/test.example.com',
       });
 
       expect(kerberosAuth.hostname).toBe('test.example.com');
@@ -715,7 +715,7 @@ describe('KerberosAuth', () => {
         servicePrincipal: 'HTTP/test.example.com@DOMAIN',
         username: 'user@DOMAIN',
         password: 'password123!',
-        domain: 'DOMAIN'
+        domain: 'DOMAIN',
       });
 
       expect(kerberosAuth.username).toBe('user@DOMAIN');
@@ -727,7 +727,7 @@ describe('KerberosAuth', () => {
       const kerberosAuth = new KerberosAuth({
         servicePrincipal: 'HTTP/test.example.com@DOMAIN',
         username: 'user@domain.com',
-        password: 'p@$$w0rd!123'
+        password: 'p@$$w0rd!123',
       });
 
       expect(kerberosAuth.username).toBe('user@domain.com');
@@ -741,7 +741,7 @@ describe('KerberosAuth', () => {
       const kerberosAuth = new KerberosAuth({
         servicePrincipal: 'HTTP/test.example.com@DOMAIN',
         username: unicodeUsername,
-        password: unicodePassword
+        password: unicodePassword,
       });
 
       expect(kerberosAuth.username).toBe(unicodeUsername);
@@ -755,7 +755,7 @@ describe('KerberosAuth', () => {
       const kerberosAuth = new KerberosAuth({
         servicePrincipal: 'HTTP/test.example.com@DOMAIN',
         hostname: longHostname,
-        domain: longDomain
+        domain: longDomain,
       });
 
       expect(kerberosAuth.hostname).toBe(longHostname);
@@ -769,7 +769,7 @@ describe('KerberosAuth', () => {
         servicePrincipal: 'HTTP/test.example.com@DOMAIN',
         username: 'testuser',
         password: 'testpass',
-        logger: mockLogger
+        logger: mockLogger,
       });
 
       // Mock GSS client initialization failure
@@ -781,8 +781,8 @@ describe('KerberosAuth', () => {
       expect(mockLogger.logAuthEvent).toHaveBeenCalledWith(
         'Kerberos authentication failed',
         expect.objectContaining({
-          error: expect.stringContaining('Failed to initialize Kerberos client')
-        })
+          error: expect.stringContaining('Failed to initialize Kerberos client'),
+        }),
       );
     });
 
@@ -791,13 +791,13 @@ describe('KerberosAuth', () => {
         servicePrincipal: 'HTTP/nonexistent.example.com@DOMAIN',
         username: 'testuser',
         password: 'testpass',
-        logger: mockLogger
+        logger: mockLogger,
       });
 
       const mockGssClient = {
         step: jest.fn((token, callback) => {
           callback(new Error('Principal not found in Kerberos database'), null);
-        })
+        }),
       };
 
       mockKerberos.initializeClient.mockImplementation((spn, options, callback) => {
@@ -805,7 +805,7 @@ describe('KerberosAuth', () => {
       });
 
       await expect(kerberosAuth.authenticate(mockHttpClient)).rejects.toThrow(
-        'Service principal not found: HTTP/nonexistent.example.com@DOMAIN'
+        'Service principal not found: HTTP/nonexistent.example.com@DOMAIN',
       );
     });
 
@@ -814,13 +814,13 @@ describe('KerberosAuth', () => {
         servicePrincipal: 'HTTP/test.example.com@DOMAIN',
         username: 'testuser',
         password: 'testpass',
-        logger: mockLogger
+        logger: mockLogger,
       });
 
       const mockGssClient = {
         step: jest.fn((token, callback) => {
           callback(new Error('No credentials cache found'), null);
-        })
+        }),
       };
 
       mockKerberos.initializeClient.mockImplementation((spn, options, callback) => {
@@ -828,7 +828,7 @@ describe('KerberosAuth', () => {
       });
 
       await expect(kerberosAuth.authenticate(mockHttpClient)).rejects.toThrow(
-        'No valid Kerberos credentials found'
+        'No valid Kerberos credentials found',
       );
     });
 
@@ -837,14 +837,14 @@ describe('KerberosAuth', () => {
         servicePrincipal: 'HTTP/test.example.com@DOMAIN',
         username: 'testuser',
         password: 'testpass',
-        logger: mockLogger
+        logger: mockLogger,
       });
 
       const mockGssClient = {
         step: jest.fn((token, callback) => {
           // Simulate continuing challenge that never completes
           callback(null, 'partial-response');
-        })
+        }),
       };
 
       mockKerberos.initializeClient.mockImplementation((spn, options, callback) => {
@@ -854,11 +854,11 @@ describe('KerberosAuth', () => {
       // Mock server to always return partial response
       mockHttpClient.request.mockResolvedValue({
         success: false,
-        challenge: 'continuing-challenge'
+        challenge: 'continuing-challenge',
       });
 
       await expect(kerberosAuth.authenticate(mockHttpClient)).rejects.toThrow(
-        'Authentication did not complete within 5 steps'
+        'Authentication did not complete within 5 steps',
       );
     });
 
@@ -867,13 +867,13 @@ describe('KerberosAuth', () => {
         servicePrincipal: 'HTTP/test.example.com@DOMAIN',
         username: 'testuser',
         password: 'testpass',
-        logger: mockLogger
+        logger: mockLogger,
       });
 
       const mockGssClient = {
         step: jest.fn((token, callback) => {
           callback(null, 'test-response');
-        })
+        }),
       };
 
       mockKerberos.initializeClient.mockImplementation((spn, options, callback) => {
@@ -887,8 +887,8 @@ describe('KerberosAuth', () => {
       expect(mockLogger.logAuthEvent).toHaveBeenCalledWith(
         'Kerberos authentication failed',
         expect.objectContaining({
-          error: expect.stringContaining('Connection failed')
-        })
+          error: expect.stringContaining('Connection failed'),
+        }),
       );
     });
 
@@ -897,13 +897,13 @@ describe('KerberosAuth', () => {
         servicePrincipal: 'HTTP/test.example.com@DOMAIN',
         username: 'testuser',
         password: 'testpass',
-        logger: mockLogger
+        logger: mockLogger,
       });
 
       const mockGssClient = {
         step: jest.fn((token, callback) => {
           callback(new Error('Token processing failed'), null);
-        })
+        }),
       };
 
       mockKerberos.initializeClient.mockImplementation((spn, options, callback) => {
@@ -918,13 +918,13 @@ describe('KerberosAuth', () => {
         servicePrincipal: 'HTTP/test.example.com@DOMAIN',
         username: 'testuser',
         password: 'testpass',
-        logger: mockLogger
+        logger: mockLogger,
       });
 
       const mockGssClient = {
         step: jest.fn((token, callback) => {
           callback(new Error('Generic error'), null);
-        })
+        }),
       };
 
       mockKerberos.initializeClient.mockImplementation((spn, options, callback) => {
@@ -942,7 +942,7 @@ describe('KerberosAuth', () => {
         servicePrincipal: 'HTTP/test.example.com@DOMAIN',
         username: 'testuser',
         password: 'testpass',
-        logger: mockLogger
+        logger: mockLogger,
       });
 
       mockKerberos.initializeClient.mockImplementation((spn, options, callback) => {
@@ -955,7 +955,7 @@ describe('KerberosAuth', () => {
 
     test('should handle challenge extraction errors gracefully', () => {
       const kerberosAuth = new KerberosAuth({
-        servicePrincipal: 'HTTP/test.example.com@DOMAIN'
+        servicePrincipal: 'HTTP/test.example.com@DOMAIN',
       });
 
       // Should not throw, just return null
@@ -968,7 +968,7 @@ describe('KerberosAuth', () => {
 
     test('should handle parse response errors', () => {
       const kerberosAuth = new KerberosAuth({
-        servicePrincipal: 'HTTP/test.example.com@DOMAIN'
+        servicePrincipal: 'HTTP/test.example.com@DOMAIN',
       });
 
       // Should handle various input types gracefully
@@ -990,7 +990,7 @@ describe('KerberosAuth', () => {
         servicePrincipal: 'HTTP/test.example.com@DOMAIN',
         username: 'testuser',
         password: 'testpass',
-        logger: mockLogger
+        logger: mockLogger,
       });
 
       // Mock synchronous error in initialization
@@ -1006,13 +1006,13 @@ describe('KerberosAuth', () => {
         servicePrincipal: 'HTTP/test.example.com@DOMAIN',
         username: 'testuser',
         password: 'testpass',
-        logger: mockLogger
+        logger: mockLogger,
       });
 
       const mockGssClient = {
         step: jest.fn((token, callback) => {
           throw new Error('Step exception');
-        })
+        }),
       };
 
       mockKerberos.initializeClient.mockImplementation((spn, options, callback) => {
@@ -1028,7 +1028,7 @@ describe('KerberosAuth', () => {
       const kerberosAuth = new KerberosAuth({
         servicePrincipal: '',
         hostname: '',
-        domain: ''
+        domain: '',
       });
 
       expect(kerberosAuth.servicePrincipal).toBe('HTTP/localhost');
@@ -1039,7 +1039,7 @@ describe('KerberosAuth', () => {
     test('should handle zero retry count', () => {
       const kerberosAuth = new KerberosAuth({
         servicePrincipal: 'HTTP/test.example.com@DOMAIN',
-        maxRetries: 0
+        maxRetries: 0,
       });
 
       expect(kerberosAuth.maxRetries).toBe(0);
@@ -1048,7 +1048,7 @@ describe('KerberosAuth', () => {
     test('should handle negative retry count', () => {
       const kerberosAuth = new KerberosAuth({
         servicePrincipal: 'HTTP/test.example.com@DOMAIN',
-        maxRetries: -1
+        maxRetries: -1,
       });
 
       expect(kerberosAuth.maxRetries).toBe(-1);
@@ -1057,7 +1057,7 @@ describe('KerberosAuth', () => {
     test('should handle very high retry count', () => {
       const kerberosAuth = new KerberosAuth({
         servicePrincipal: 'HTTP/test.example.com@DOMAIN',
-        maxRetries: 1000
+        maxRetries: 1000,
       });
 
       expect(kerberosAuth.maxRetries).toBe(1000);
@@ -1067,7 +1067,7 @@ describe('KerberosAuth', () => {
       const kerberosAuth = new KerberosAuth({
         servicePrincipal: 'HTTP/test.example.com@DOMAIN',
         username: null,
-        password: null
+        password: null,
       });
 
       expect(kerberosAuth.username).toBeNull();
@@ -1078,7 +1078,7 @@ describe('KerberosAuth', () => {
       const kerberosAuth = new KerberosAuth({
         servicePrincipal: 'HTTP/test.example.com@DOMAIN',
         username: undefined,
-        password: undefined
+        password: undefined,
       });
 
       expect(kerberosAuth.username).toBeUndefined();
@@ -1087,7 +1087,7 @@ describe('KerberosAuth', () => {
 
     test('should handle non-string service principal', () => {
       const kerberosAuth = new KerberosAuth({
-        servicePrincipal: 12345
+        servicePrincipal: 12345,
       });
 
       expect(kerberosAuth.servicePrincipal).toBe(12345);
@@ -1101,12 +1101,12 @@ describe('KerberosAuth', () => {
         encryptionTypes: ['aes256-cts-hmac-sha1-96'],
         preferredEncTypes: [16, 18],
         allowWeakCrypto: false,
-        canonicalize: true
+        canonicalize: true,
       };
 
       const kerberosAuth = new KerberosAuth({
         servicePrincipal: 'HTTP/test.example.com@DOMAIN',
-        kdcOptions: complexKdcOptions
+        kdcOptions: complexKdcOptions,
       });
 
       expect(kerberosAuth.kdcOptions).toEqual(complexKdcOptions);
@@ -1119,15 +1119,15 @@ describe('KerberosAuth', () => {
         custom: {
           deeply: {
             nested: {
-              value: 'test'
-            }
-          }
-        }
+              value: 'test',
+            },
+          },
+        },
       };
 
       const kerberosAuth = new KerberosAuth({
         servicePrincipal: 'HTTP/test.example.com@DOMAIN',
-        kdcOptions: nestedKdcOptions
+        kdcOptions: nestedKdcOptions,
       });
 
       expect(kerberosAuth.kdcOptions.custom.deeply.nested.value).toBe('test');
@@ -1137,7 +1137,7 @@ describe('KerberosAuth', () => {
       const customSPN = 'HTTP/custom-format@DOMAIN';
 
       const kerberosAuth = new KerberosAuth({
-        servicePrincipal: customSPN
+        servicePrincipal: customSPN,
       });
 
       expect(kerberosAuth.servicePrincipal).toBe(customSPN);
@@ -1145,7 +1145,7 @@ describe('KerberosAuth', () => {
 
     test('should handle numeric domain', () => {
       const kerberosAuth = new KerberosAuth({
-        servicePrincipal: 'HTTP/test.example.com@12345'
+        servicePrincipal: 'HTTP/test.example.com@12345',
       });
 
       expect(kerberosAuth.domain).toBe('12345');
@@ -1155,7 +1155,7 @@ describe('KerberosAuth', () => {
   describe('Utility methods and getters', () => {
     test('should return correct auth method', () => {
       const kerberosAuth = new KerberosAuth({
-        servicePrincipal: 'HTTP/test.example.com@DOMAIN'
+        servicePrincipal: 'HTTP/test.example.com@DOMAIN',
       });
 
       expect(kerberosAuth.getAuthMethod()).toBe('kerberos');
@@ -1163,7 +1163,7 @@ describe('KerberosAuth', () => {
 
     test('should return correct service principal via getter', () => {
       const kerberosAuth = new KerberosAuth({
-        servicePrincipal: 'HTTP/test.example.com@DOMAIN'
+        servicePrincipal: 'HTTP/test.example.com@DOMAIN',
       });
 
       expect(kerberosAuth.getServicePrincipal()).toBe('HTTP/test.example.com@DOMAIN');
@@ -1173,7 +1173,7 @@ describe('KerberosAuth', () => {
       const kerberosAuth = new KerberosAuth({
         servicePrincipal: 'HTTP/test.example.com@DOMAIN',
         hostname: 'test.example.com',
-        domain: 'DOMAIN'
+        domain: 'DOMAIN',
       });
 
       const validation = kerberosAuth.validateConfig();
@@ -1184,7 +1184,7 @@ describe('KerberosAuth', () => {
     test('should validate configuration with errors for invalid config', () => {
       const kerberosAuth = new KerberosAuth({
         servicePrincipal: '',
-        hostname: ''
+        hostname: '',
       });
 
       const validation = kerberosAuth.validateConfig();

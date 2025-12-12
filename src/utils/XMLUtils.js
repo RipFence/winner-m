@@ -1,4 +1,4 @@
-const { parseString, Builder } = require('xml2js');
+const { parseString } = require('xml2js');
 const { v4: uuidv4 } = require('uuid');
 
 /**
@@ -17,7 +17,7 @@ class XMLUtils {
    */
   static buildCreateShell() {
     const messageId = this.generateUUID();
-    
+
     return `<?xml version="1.0" encoding="utf-8"?>
 <s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envelope" 
             xmlns:a="http://schemas.xmlsoap.org/ws/2004/08/addressing"
@@ -45,7 +45,7 @@ class XMLUtils {
    */
   static buildRunCommand(shellId, command) {
     const messageId = this.generateUUID();
-    
+
     return `<?xml version="1.0" encoding="utf-8"?>
 <s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envelope">
   <s:Header>
@@ -73,7 +73,7 @@ class XMLUtils {
    */
   static buildGetCommandOutput(shellId, commandId) {
     const messageId = this.generateUUID();
-    
+
     return `<?xml version="1.0" encoding="utf-8"?>
 <s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envelope">
   <s:Header>
@@ -100,7 +100,7 @@ class XMLUtils {
    */
   static buildDeleteCommand(shellId, commandId) {
     const messageId = this.generateUUID();
-    
+
     return `<?xml version="1.0" encoding="utf-8"?>
 <s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envelope">
   <s:Header>
@@ -125,7 +125,7 @@ class XMLUtils {
    */
   static buildCloseShell(shellId) {
     const messageId = this.generateUUID();
-    
+
     return `<?xml version="1.0" encoding="utf-8"?>
 <s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envelope">
   <s:Header>
@@ -199,7 +199,7 @@ class XMLUtils {
           const envelope = result['s:Envelope'];
           const body = envelope['s:Body'];
           const commandResponse = body['r:CommandResponse'];
-          
+
           resolve(commandResponse.CommandId);
         } catch (parseError) {
           reject(parseError);
@@ -223,7 +223,7 @@ class XMLUtils {
           const envelope = result['s:Envelope'];
           const body = envelope['s:Body'];
           const receiveResponse = body['r:ReceiveResponse'];
-          
+
           if (!receiveResponse) {
             resolve({ stdout: '', stderr: '', exitCode: 0 });
             return;
@@ -239,22 +239,20 @@ class XMLUtils {
           let stderr = '';
 
           if (Array.isArray(stream)) {
-            stream.forEach(s => {
+            stream.forEach((s) => {
               if (s.$.Name === 'stdout') {
                 stdout += Buffer.from(s._, 'base64').toString('utf8');
               } else if (s.$.Name === 'stderr') {
                 stderr += Buffer.from(s._, 'base64').toString('utf8');
               }
             });
-          } else {
-            if (stream.$.Name === 'stdout') {
-              stdout = Buffer.from(stream._, 'base64').toString('utf8');
-            } else if (stream.$.Name === 'stderr') {
-              stderr = Buffer.from(stream._, 'base64').toString('utf8');
-            }
+          } else if (stream.$.Name === 'stdout') {
+            stdout = Buffer.from(stream._, 'base64').toString('utf8');
+          } else if (stream.$.Name === 'stderr') {
+            stderr = Buffer.from(stream._, 'base64').toString('utf8');
           }
 
-          const exitCode = receiveResponse.ExitCode ? parseInt(receiveResponse.ExitCode) : 0;
+          const exitCode = receiveResponse.ExitCode ? parseInt(receiveResponse.ExitCode, 10) : 0;
 
           resolve({ stdout, stderr, exitCode });
         } catch (parseError) {
@@ -280,15 +278,15 @@ class XMLUtils {
             const envelope = result['s:Envelope'];
             const body = envelope['s:Body'];
             const fault = body['s:Fault'];
-            
+
             const faultCode = fault.faultcode;
             const faultString = fault.faultstring;
-            const detail = fault.detail;
-            
+            const { detail } = fault;
+
             const error = new Error(`WinRM Fault: ${faultString} (Code: ${faultCode})`);
             error.code = faultCode;
             error.detail = detail;
-            
+
             reject(error);
           } catch (parseError) {
             reject(parseError);

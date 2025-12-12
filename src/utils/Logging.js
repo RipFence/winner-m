@@ -10,14 +10,14 @@ class WinRMLogger {
       warn: 1,
       info: 2,
       debug: 3,
-      trace: 4
+      trace: 4,
     };
     this.enabled = {
       error: true,
       warn: true,
       info: true,
       debug: false,
-      trace: false
+      trace: false,
     };
   }
 
@@ -33,7 +33,7 @@ class WinRMLogger {
    */
   error(message, details = {}) {
     if (this.shouldLog('error')) {
-      this.formatLog('ERROR', message, details);
+      WinRMLogger.formatLog('ERROR', message, details);
     }
   }
 
@@ -42,7 +42,7 @@ class WinRMLogger {
    */
   warn(message, details = {}) {
     if (this.shouldLog('warn')) {
-      this.formatLog('WARN', message, details);
+      WinRMLogger.formatLog('WARN', message, details);
     }
   }
 
@@ -51,7 +51,7 @@ class WinRMLogger {
    */
   info(message, details = {}) {
     if (this.shouldLog('info')) {
-      this.formatLog('INFO', message, details);
+      WinRMLogger.formatLog('INFO', message, details);
     }
   }
 
@@ -60,7 +60,7 @@ class WinRMLogger {
    */
   debug(message, details = {}) {
     if (this.shouldLog('debug')) {
-      this.formatLog('DEBUG', message, details);
+      WinRMLogger.formatLog('DEBUG', message, details);
     }
   }
 
@@ -69,7 +69,7 @@ class WinRMLogger {
    */
   trace(message, details = {}) {
     if (this.shouldLog('trace')) {
-      this.formatLog('TRACE', message, details);
+      WinRMLogger.formatLog('TRACE', message, details);
     }
   }
 
@@ -83,13 +83,15 @@ class WinRMLogger {
   /**
    * Format and output log message
    */
-  formatLog(level, message, details) {
+  static formatLog(level, message, details) {
     const timestamp = new Date().toISOString();
     const logMessage = `[${timestamp}] [${level}] ${message}`;
-    
+
     if (Object.keys(details).length > 0) {
+      // eslint-disable-next-line no-console
       console.log(logMessage, details);
     } else {
+      // eslint-disable-next-line no-console
       console.log(logMessage);
     }
   }
@@ -101,8 +103,8 @@ class WinRMLogger {
     this.debug('HTTP Request', {
       method,
       url,
-      headers: this.sanitizeHeaders(headers),
-      data: data ? data.substring(0, 500) + (data.length > 500 ? '...' : '') : null
+      headers: WinRMLogger.sanitizeHeaders(headers),
+      data: data ? data.substring(0, 500) + (data.length > 500 ? '...' : '') : null,
     });
   }
 
@@ -112,15 +114,15 @@ class WinRMLogger {
   logHttpResponse(statusCode, headers, data) {
     this.debug('HTTP Response', {
       statusCode,
-      headers: this.sanitizeHeaders(headers),
-      data: data ? data.substring(0, 500) + (data.length > 500 ? '...' : '') : null
+      headers: WinRMLogger.sanitizeHeaders(headers),
+      data: data ? data.substring(0, 500) + (data.length > 500 ? '...' : '') : null,
     });
   }
 
   /**
    * Sanitize headers to remove sensitive information
    */
-  sanitizeHeaders(headers) {
+  static sanitizeHeaders(headers) {
     const sanitized = { ...headers };
     if (sanitized.Authorization) {
       sanitized.Authorization = '[REDACTED]';
@@ -145,7 +147,7 @@ class WinRMLogger {
     this.debug('Command execution', {
       command,
       commandId,
-      shellId
+      shellId,
     });
   }
 
@@ -155,7 +157,7 @@ class WinRMLogger {
   logShellEvent(event, shellId) {
     this.debug('Shell lifecycle', {
       event,
-      shellId
+      shellId,
     });
   }
 
@@ -165,7 +167,7 @@ class WinRMLogger {
   logPerformance(operation, duration, details = {}) {
     this.debug(`Performance: ${operation}`, {
       duration: `${duration}ms`,
-      ...details
+      ...details,
     });
   }
 }
@@ -175,5 +177,5 @@ const logger = new WinRMLogger();
 
 module.exports = {
   WinRMLogger,
-  logger
+  logger,
 };

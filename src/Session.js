@@ -1,6 +1,6 @@
-const { WinRMCommandError, WinRMProtocolError } = require('./utils/ErrorTypes');
-const { logger } = require('./utils/Logging');
-const Protocol = require('./Protocol');
+const { WinRMCommandError, WinRMProtocolError } = require('./utils/ErrorTypes.js');
+const { logger } = require('./utils/Logging.js');
+const Protocol = require('./protocol.js');
 
 /**
  * High-level WinRM Session class
@@ -9,27 +9,27 @@ const Protocol = require('./Protocol');
  */
 class Session {
   constructor(options) {
-    this.options = this.normalizeSessionOptions(options);
+    this.options = Session.normalizeSessionOptions(options);
     this.protocol = new Protocol(this.options);
     this.defaultCommandOptions = {
       workingDirectory: this.options.workingDirectory,
       environmentVars: this.options.environmentVars,
       operationTimeout: this.options.timeouts?.operationTimeout,
-      readTimeout: this.options.timeouts?.readTimeout
+      readTimeout: this.options.timeouts?.readTimeout,
     };
-    
+
     logger.info('WinRM Session initialized', {
       host: this.options.host,
       port: this.options.port,
       protocol: this.options.protocol,
-      auth: this.protocol.authManager.getAuthInfo()
+      auth: this.protocol.authManager.getAuthInfo(),
     });
   }
 
   /**
    * Normalize session options and set defaults
    */
-  normalizeSessionOptions(options) {
+  static normalizeSessionOptions(options) {
     const baseOptions = {
       host: options.host,
       port: options.port || (options.protocol === 'https' ? 5986 : 5985),
@@ -40,28 +40,28 @@ class Session {
         username: options.auth.username,
         password: options.auth.password,
         domain: options.auth.domain || '',
-        workstation: options.auth.workstation || 'JS-WINRM-SESSION'
+        workstation: options.auth.workstation || 'JS-WINRM-SESSION',
       },
       ssl: {
         rejectUnauthorized: options.ssl?.rejectUnauthorized !== false,
         ca: options.ssl?.ca,
         cert: options.ssl?.cert,
         key: options.ssl?.key,
-        passphrase: options.ssl?.passphrase
+        passphrase: options.ssl?.passphrase,
       },
       timeouts: {
         connectTimeout: options.timeouts?.connectTimeout || 30000,
         readTimeout: options.timeouts?.readTimeout || 60000,
-        operationTimeout: options.timeouts?.operationTimeout || 300000 // 5 minutes default for PowerShell
+        operationTimeout: options.timeouts?.operationTimeout || 300000, // 5 minutes default for PowerShell
       },
       retries: {
         maxRetries: options.retries?.maxRetries || 3,
-        retryDelay: options.retries?.retryDelay || 1000
+        retryDelay: options.retries?.retryDelay || 1000,
       },
       workingDirectory: options.workingDirectory || 'C:\\',
       environmentVars: options.environmentVars || {},
       maxShellTime: options.maxShellTime || 3600, // 1 hour default
-      maxConnections: options.maxConnections || 10
+      maxConnections: options.maxConnections || 10,
     };
 
     return baseOptions;
@@ -73,11 +73,11 @@ class Session {
   async run(command, options = {}) {
     const runOptions = { ...this.defaultCommandOptions, ...options };
     const startTime = Date.now();
-    
+
     logger.info('Session.run command', {
       command,
       workingDirectory: runOptions.workingDirectory,
-      envVars: Object.keys(runOptions.environmentVars || {})
+      envVars: Object.keys(runOptions.environmentVars || {}),
     });
 
     try {
@@ -91,25 +91,24 @@ class Session {
 
       // Execute command and wait for completion
       const result = await this.protocol.runCommandAndWait('cmd.exe', `/c ${completeCommand}`);
-      
+
       const duration = Date.now() - startTime;
       logger.info('Session.run completed', {
         command,
         exitCode: result.exitCode,
         duration,
         stdoutLength: result.stdout.length,
-        stderrLength: result.stderr.length
+        stderrLength: result.stderr.length,
       });
       logger.logPerformance('session.run', duration, { command, exitCode: result.exitCode });
 
-      return this.formatResult(result, startTime);
-
+      return Session.formatResult(result, startTime);
     } catch (error) {
       const duration = Date.now() - startTime;
       logger.error('Session.run failed', {
         command,
         error: error.message,
-        duration
+        duration,
       });
 
       if (error instanceof WinRMCommandError || error instanceof WinRMProtocolError) {
@@ -122,7 +121,7 @@ class Session {
         1, // Generic exit code for failures
         '',
         error.message,
-        { duration, originalError: error.message }
+        { duration, originalError: error.message },
       );
     }
   }
@@ -133,10 +132,10 @@ class Session {
   async runPS(powerShellScript, options = {}) {
     const psOptions = { ...this.defaultCommandOptions, ...options };
     const startTime = Date.now();
-    
+
     logger.info('Session.runPS', {
       scriptLength: powerShellScript.length,
-      workingDirectory: psOptions.workingDirectory
+      workingDirectory: psOptions.workingDirectory,
     });
 
     try {
@@ -146,38 +145,37 @@ class Session {
       }
 
       // Encode PowerShell script for safe transmission
-      const encodedScript = this.encodePowerShellScript(powerShellScript);
-      
+      const encodedScript = Session.encodePowerShellScript(powerShellScript);
+
       // Build PowerShell command
-      const psCommand = this.buildPowerShellCommand(encodedScript, psOptions);
-      
+      const psCommand = Session.buildPowerShellCommand(encodedScript, psOptions);
+
       // Execute PowerShell command
       const result = await this.protocol.runCommandAndWait('powershell.exe', `-EncodedCommand ${psCommand}`);
-      
+
       // Decode PowerShell output if needed
-      const decodedOutput = this.decodePowerShellOutput(result.stdout);
-      const decodedError = this.decodePowerShellOutput(result.stderr);
-      
+      const decodedOutput = Session.decodePowerShellOutput(result.stdout);
+      const decodedError = Session.decodePowerShellOutput(result.stderr);
+
       const duration = Date.now() - startTime;
       logger.info('Session.runPS completed', {
         exitCode: result.exitCode,
         duration,
         outputLength: decodedOutput.length,
-        errorLength: decodedError.length
+        errorLength: decodedError.length,
       });
       logger.logPerformance('session.runPS', duration, { exitCode: result.exitCode });
 
-      return this.formatResult({
+      return Session.formatResult({
         ...result,
         stdout: decodedOutput,
-        stderr: decodedError
+        stderr: decodedError,
       }, startTime);
-
     } catch (error) {
       const duration = Date.now() - startTime;
       logger.error('Session.runPS failed', {
         error: error.message,
-        duration
+        duration,
       });
 
       if (error instanceof WinRMCommandError || error instanceof WinRMProtocolError) {
@@ -190,7 +188,7 @@ class Session {
         1,
         '',
         error.message,
-        { duration, originalError: error.message }
+        { duration, originalError: error.message },
       );
     }
   }
@@ -220,7 +218,7 @@ class Session {
   /**
    * Encode PowerShell script for safe transmission
    */
-  encodePowerShellScript(script) {
+  static encodePowerShellScript(script) {
     // Convert to UTF-16LE and base64 encode
     const unicodeScript = Buffer.from(script, 'utf8').toString('base64');
     return unicodeScript;
@@ -229,9 +227,9 @@ class Session {
   /**
    * Decode PowerShell output
    */
-  decodePowerShellOutput(output) {
+  static decodePowerShellOutput(output) {
     if (!output) return output;
-    
+
     try {
       // If output appears to be base64 encoded, decode it
       const decoded = Buffer.from(output, 'base64').toString('utf8');
@@ -245,7 +243,7 @@ class Session {
   /**
    * Build PowerShell command with encoded script
    */
-  buildPowerShellCommand(encodedScript, options) {
+  static buildPowerShellCommand(encodedScript, options) {
     let psCommand = encodedScript;
 
     // Add working directory if specified
@@ -259,9 +257,9 @@ class Session {
   /**
    * Format execution result
    */
-  formatResult(result, startTime) {
+  static formatResult(result, startTime) {
     const endTime = Date.now();
-    
+
     return {
       statusCode: result.exitCode || 0,
       stdout: result.stdout || '',
@@ -270,7 +268,7 @@ class Session {
       startTime: new Date(startTime),
       endTime: new Date(endTime),
       duration: endTime - startTime,
-      success: (result.exitCode || 0) === 0
+      success: (result.exitCode || 0) === 0,
     };
   }
 
@@ -279,17 +277,18 @@ class Session {
    */
   async runBatch(commands) {
     const results = [];
-    
+
     for (const command of commands) {
+      // eslint-disable-next-line no-await-in-loop
       const result = await this.run(command);
       results.push(result);
-      
+
       // Stop on first failure if specified
       if (result.exitCode !== 0 && command.continueOnError !== true) {
         break;
       }
     }
-    
+
     return results;
   }
 
@@ -311,7 +310,7 @@ class Session {
    * Test connectivity
    */
   async ping() {
-    return await this.protocol.ping();
+    return this.protocol.ping();
   }
 
   /**
@@ -346,17 +345,17 @@ class Session {
       const hostname = await this.run('hostname');
       const osVersion = await this.run('ver');
       const currentUser = await this.run('whoami');
-      
+
       return {
         hostname: hostname.stdout.trim(),
         osVersion: osVersion.stdout.trim(),
         currentUser: currentUser.stdout.trim(),
-        connected: this.isConnected()
+        connected: this.isConnected(),
       };
     } catch (error) {
       throw new WinRMProtocolError(
         `Failed to get system information: ${error.message}`,
-        'GET_SYSTEM_INFO'
+        'GET_SYSTEM_INFO',
       );
     }
   }
